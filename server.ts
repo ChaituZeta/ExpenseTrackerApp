@@ -12,19 +12,52 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 3000;
 
 // Supabase client for server-side checks
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
+
+// Use service role key if available and not a placeholder, otherwise fallback to anon key
+const finalKey = (supabaseServiceKey && supabaseServiceKey !== "your-service-role-key") 
+  ? supabaseServiceKey 
+  : supabaseAnonKey;
+
 const supabase = createClient(
-  process.env.VITE_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY!
+  supabaseUrl || "",
+  finalKey || ""
 );
+
+console.log("Supabase initialized. Using Service Role Key:", !!(supabaseServiceKey && supabaseServiceKey !== "your-service-role-key"));
+if (!supabaseServiceKey || supabaseServiceKey === "your-service-role-key") {
+  console.warn("WARNING: SUPABASE_SERVICE_ROLE_KEY is missing or using placeholder. Admin features may fail due to RLS.");
+}
+
+// Startup check for Supabase tables
+async function checkSupabase() {
+  console.log("Checking Supabase connection and tables...");
+  const tables = ["profiles", "transactions", "categories", "activity_logs", "budgets"];
+  for (const table of tables) {
+    try {
+      const { error } = await supabase.from(table).select("*", { count: "exact", head: true });
+      if (error) {
+        console.error(`Table check failed for '${table}':`, error.message);
+      } else {
+        console.log(`Table check passed for '${table}'`);
+      }
+    } catch (err: any) {
+      console.error(`Exception checking table '${table}':`, err.message);
+    }
+  }
+}
+checkSupabase();
 
 // Email transporter
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp.ethereal.email",
+  host: process.env.SMTP_HOST || "smtp.gmail.com",
   port: parseInt(process.env.SMTP_PORT || "587"),
   secure: process.env.SMTP_PORT === "465",
   auth: {
-    user: process.env.SMTP_USER || "demo",
-    pass: process.env.SMTP_PASS || "demo",
+    user: process.env.SMTP_USER || "cbogineni@gmail.com",
+    pass: process.env.SMTP_PASS || "zmel ckmu jfqn pqwc",
   },
 });
 
@@ -46,7 +79,7 @@ const BRAND_ACCENT = "#F3A61C";
 const getEmailTemplate = (title: string, content: string) => `
   <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 24px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
     <div style="background-color: ${BRAND_PRIMARY}; padding: 40px; text-align: center;">
-      <h1 style="color: white; margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -1px;">ExpenseTracker</h1>
+      <h1 style="color: white; margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -1px;">FinTrack</h1>
     </div>
     <div style="padding: 40px; background-color: white;">
       <h2 style="color: #111827; margin-top: 0; font-size: 24px; font-weight: 700;">${title}</h2>
@@ -54,7 +87,7 @@ const getEmailTemplate = (title: string, content: string) => `
         ${content}
       </div>
       <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f3f4f6; text-align: center; color: #9ca3af; font-size: 12px;">
-        &copy; 2026 ExpenseTracker. All rights reserved.
+        &copy; 2026 FinTrack. All rights reserved.
       </div>
     </div>
   </div>
@@ -64,15 +97,230 @@ async function startServer() {
   const app = express();
   app.use(express.json());
 
+  // Admin Middleware
+  const isAdmin = async (req: any, res: any, next: any) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      // Extract token (assuming Bearer token)
+      const token = authHeader.split(' ')[1];
+      if (!token) return res.status(401).json({ message: "No token provided" });
+
+      // Verify user with Supabase
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (error || !user) {
+        console.error("Admin middleware auth error:", error?.message);
+        return res.status(401).json({ message: "Invalid session" });
+      }
+
+      // Check role in profiles table
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      const isDefaultAdmin = user.email === 'cbogineni@gmail.com';
+
+      if (profile?.role === 'admin' || isDefaultAdmin) {
+        // If default admin but no profile or wrong role, ensure it's correct
+        if (isDefaultAdmin && profile?.role !== 'admin') {
+          console.log("Ensuring default admin profile exists and has admin role...");
+          await supabase.from('profiles').upsert({
+            id: user.id,
+            email: user.email,
+            name: user.user_metadata.name || 'Admin',
+            role: 'admin'
+          });
+        }
+        
+        req.user = user;
+        next();
+      } else {
+        console.warn(`Unauthorized admin access attempt by ${user.email}. Role: ${profile?.role}`);
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+    } catch (err: any) {
+      console.error("Admin middleware exception:", err.message);
+      res.status(500).json({ message: "Internal server error during authorization" });
+    }
+  };
+
+  // Admin API Routes
+  app.get("/api/admin/users", isAdmin, async (req, res) => {
+    try {
+      const { data, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+      if (error) {
+        console.error("Admin users error details:", error.message, error.details, error.hint, error.code);
+        return res.status(500).json({ message: error.message || "Failed to fetch users" });
+      }
+      res.json(data);
+    } catch (error: any) {
+      console.error("Admin users catch error:", error.message || error);
+      res.status(500).json({ message: "Internal server error fetching users" });
+    }
+  });
+
+  app.get("/api/admin/transactions", isAdmin, async (req, res) => {
+    try {
+      // Try a simpler query first if the join fails
+      const { data, error } = await supabase
+        .from("transactions")
+        .select(`
+          *,
+          categories (name, icon, color)
+        `)
+        .order("date", { ascending: false });
+      
+      if (error) {
+        console.error("Admin transactions error details:", error.message, error.details, error.hint, error.code);
+        return res.status(500).json({ message: error.message || "Failed to fetch transactions" });
+      }
+      
+      const formatted = data.map((t: any) => ({
+        ...t,
+        category_name: t.categories?.name,
+        category_icon: t.categories?.icon,
+        category_color: t.categories?.color,
+        // We'll skip user details for now if the join is problematic
+        user_name: "User",
+        user_email: "Email",
+      }));
+      
+      res.json(formatted);
+    } catch (error: any) {
+      console.error("Admin transactions catch error:", error.message || error);
+      res.status(500).json({ message: "Internal server error fetching transactions" });
+    }
+  });
+
+  app.get("/api/admin/logs", isAdmin, async (req, res) => {
+    try {
+      const { data, error } = await supabase.from("activity_logs").select("*").order("created_at", { ascending: false });
+      if (error) {
+        console.error("Admin logs error details:", error.message, error.details, error.hint, error.code);
+        return res.status(500).json({ message: error.message || "Failed to fetch logs" });
+      }
+      res.json(data);
+    } catch (error: any) {
+      console.error("Admin logs catch error:", error.message || error);
+      res.status(500).json({ message: "Internal server error fetching logs" });
+    }
+  });
+
+  app.post("/api/admin/create-user", isAdmin, async (req, res) => {
+    const { email, password, name, phone, role, sendEmail } = req.body;
+    
+    try {
+      if (!supabase.auth.admin) {
+        throw new Error("Supabase Admin SDK not initialized. Ensure SUPABASE_SERVICE_ROLE_KEY is set.");
+      }
+
+      // 1. Create user in Supabase Auth
+      const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name, phone }
+      });
+
+      if (authError) {
+        console.error("Admin create user auth error:", JSON.stringify(authError, null, 2));
+        return res.status(400).json({ message: authError.message });
+      }
+
+      // 2. Ensure profile exists with correct role
+      // We use upsert here to be safe, in case the trigger didn't run or we want to override the role
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert({ 
+          id: authUser.user.id,
+          email: email,
+          name: name,
+          phone: phone,
+          role: role || 'user' 
+        });
+
+      if (profileError) {
+        console.error("Admin create user profile error:", JSON.stringify(profileError, null, 2));
+      }
+
+      // 3. Send welcome email if requested
+      if (sendEmail) {
+        try {
+          const html = getEmailTemplate(
+            "Your Account Credentials",
+            `<p>Hi <strong>${name}</strong>,</p>
+             <p>An account has been created for you on FinTrack.</p>
+             <p><strong>Your Login Credentials:</strong></p>
+             <div style="background-color: #f9fafb; padding: 20px; border-radius: 16px; margin: 20px 0; font-family: monospace;">
+               Email: ${email}<br>
+               Password: ${password}
+             </div>
+             <p>Please log in and change your password immediately for security.</p>
+             <div style="margin-top: 30px; text-align: center;">
+               <a href="${process.env.APP_URL || 'http://localhost:3000'}/login" style="background-color: ${BRAND_ACCENT}; color: white; padding: 14px 32px; border-radius: 16px; text-decoration: none; font-weight: bold; display: inline-block;">Login Now</a>
+             </div>`
+          );
+
+          await transporter.sendMail({
+            from: '"FinTrack Admin" <admin@fintrack.com>',
+            to: email,
+            subject: "Your FinTrack Account Credentials",
+            html,
+          });
+        } catch (emailErr) {
+          console.error("Failed to send welcome email:", emailErr);
+          // Don't fail the whole request if email fails
+        }
+      }
+
+      res.json({ success: true, user: authUser.user });
+    } catch (error: any) {
+      console.error("Admin create user catch error:", error);
+      res.status(500).json({ message: error.message || "Internal server error creating user" });
+    }
+  });
+
+  app.post("/api/admin/sync-profiles", isAdmin, async (req, res) => {
+    try {
+      if (!supabase.auth.admin) {
+        throw new Error("Supabase Admin SDK not initialized. Ensure SUPABASE_SERVICE_ROLE_KEY is set.");
+      }
+      // Fetch all users from Auth
+      const { data: { users: authUsers }, error: authError } = await supabase.auth.admin.listUsers();
+      if (authError) throw authError;
+
+      const results = [];
+      for (const user of authUsers) {
+        const { error: upsertError } = await supabase.from('profiles').upsert([{
+          id: user.id,
+          email: user.email,
+          name: user.user_metadata.name || user.email?.split('@')[0],
+          role: user.email === 'cbogineni@gmail.com' ? 'admin' : 'user'
+        }], { onConflict: 'id' });
+        
+        if (!upsertError) results.push(user.email);
+        else console.error(`Failed to sync profile for ${user.email}:`, upsertError.message);
+      }
+
+      res.json({ success: true, synced: results });
+    } catch (error: any) {
+      console.error("Sync profiles error:", error.message);
+      res.status(500).json({ message: error.message || "Internal server error syncing profiles" });
+    }
+  });
+
   // API Routes
   app.post("/api/email/welcome", async (req, res) => {
     const { email, name, details } = req.body;
     console.log(`Attempting to send welcome email to ${email}`);
     try {
       const html = getEmailTemplate(
-        "Welcome to ExpenseTracker!",
+        "Welcome to FinTrack!",
         `<p>Hi <strong>${name}</strong>,</p>
-         <p>Thank you for joining ExpenseTracker. We're excited to help you manage your finances better!</p>
+         <p>Thank you for joining FinTrack. We're excited to help you manage your finances better!</p>
          <p><strong>Your Account Details:</strong></p>
          <div style="background-color: #f9fafb; padding: 15px; border-radius: 12px; margin: 15px 0; font-family: monospace;">
            ${details ? details.replace(/\n/g, '<br>') : `Email: ${email}`}
@@ -84,9 +332,9 @@ async function startServer() {
       );
 
       const info = await transporter.sendMail({
-        from: '"ExpenseTracker" <noreply@expensetracker.com>',
+        from: '"FinTrack" <noreply@fintrack.com>',
         to: email,
-        subject: "Welcome to ExpenseTracker!",
+        subject: "Welcome to FinTrack!",
         html,
       });
 
@@ -100,17 +348,30 @@ async function startServer() {
 
   app.post("/api/auth/forgot-password", async (req, res) => {
     const { identifier } = req.body;
+    if (!identifier) {
+      return res.status(400).json({ message: "Email or mobile number is required" });
+    }
     console.log(`Forgot password request for: ${identifier}`);
     try {
       // Search for user by email or phone in profiles table
-      const { data: profiles, error } = await supabase
+      let { data: profiles, error } = await supabase
         .from("profiles")
         .select("email, name, phone")
-        .or(`email.eq.${identifier},phone.eq.${identifier}`)
+        .eq("email", identifier)
         .maybeSingle();
 
+      if (!profiles && !error) {
+        const { data: phoneProfile, error: phoneError } = await supabase
+          .from("profiles")
+          .select("email, name, phone")
+          .eq("phone", identifier)
+          .maybeSingle();
+        profiles = phoneProfile;
+        error = phoneError;
+      }
+
       if (error) {
-        console.error("Supabase profile lookup error:", error);
+        console.error("Supabase profile lookup error details:", error.message, error.details, error.hint, error.code);
         throw error;
       }
 
@@ -135,7 +396,7 @@ async function startServer() {
       );
 
       const info = await transporter.sendMail({
-        from: '"ExpenseTracker Security" <security@expensetracker.com>',
+        from: '"FinTrack Security" <security@fintrack.com>',
         to: profiles.email,
         subject: "Password Reset OTP",
         html,
@@ -143,9 +404,9 @@ async function startServer() {
 
       console.log("OTP email sent:", info.messageId);
       res.json({ success: true, message: "OTP sent to registered email" });
-    } catch (error) {
-      console.error("Forgot password error:", error);
-      res.status(500).json({ message: "Failed to process request" });
+    } catch (error: any) {
+      console.error("Forgot password error details:", error.message, error.details, error.hint, error.code);
+      res.status(500).json({ message: "Failed to process request. Please check SMTP settings and Supabase connection." });
     }
   });
 
@@ -166,7 +427,7 @@ async function startServer() {
         .single();
 
       if (profileError || !userProfile) {
-        console.error("Profile lookup error during reset:", profileError);
+        console.error("Profile lookup error during reset:", JSON.stringify(profileError, null, 2));
         return res.status(404).json({ message: "User profile not found" });
       }
 
@@ -176,7 +437,7 @@ async function startServer() {
       );
 
       if (error) {
-        console.error("Supabase admin update error:", error);
+        console.error("Supabase admin update error details:", JSON.stringify(error, null, 2));
         throw error;
       }
 

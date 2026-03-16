@@ -133,40 +133,34 @@ export const api = {
 
   admin: {
     getAllUsers: async (): Promise<User[]> => {
-      // In a real app, this would be a server-side call or a special table
-      // For this demo, we'll fetch from a custom 'profiles' table if it exists
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*');
-      if (error) return [];
-      return data as User[];
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/users', {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch users');
+      return response.json();
     },
     getAllTransactions: async (): Promise<Transaction[]> => {
-      const { data, error } = await supabase
-        .from('transactions')
-        .select(`
-          *,
-          categories (name, icon, color),
-          profiles (name, email)
-        `)
-        .order('date', { ascending: false });
-      if (error) throw error;
-      return (data as any[]).map(t => ({
-        ...t,
-        category_name: t.categories?.name,
-        category_icon: t.categories?.icon,
-        category_color: t.categories?.color,
-        user_name: t.profiles?.name,
-        user_email: t.profiles?.email,
-      })) as any[];
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/transactions', {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch transactions');
+      return response.json();
     },
     getAllLogs: async (): Promise<ActivityLog[]> => {
-      const { data, error } = await supabase
-        .from('activity_logs')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data as ActivityLog[];
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/logs', {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch logs');
+      return response.json();
     },
     deleteUser: async (id: string) => {
       const { error } = await supabase
@@ -176,6 +170,14 @@ export const api = {
       if (error) throw error;
       await api.logs.create('Admin Action', `Deleted user ID ${id}`);
     },
+    updateUser: async (id: string, data: Partial<User>) => {
+      const { error } = await supabase
+        .from('profiles')
+        .update(data)
+        .eq('id', id);
+      if (error) throw error;
+      await api.logs.create('Admin Action', `Updated user ID ${id}`);
+    },
     updateUserRole: async (id: string, role: 'admin' | 'user') => {
       const { error } = await supabase
         .from('profiles')
@@ -183,6 +185,22 @@ export const api = {
         .eq('id', id);
       if (error) throw error;
       await api.logs.create('Admin Action', `Updated user ID ${id} role to ${role}`);
+    },
+    createUser: async (userData: any) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify(userData),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to create user');
+      }
+      return response.json();
     }
   },
 
@@ -297,22 +315,45 @@ export const api = {
     },
     upsert: async (data: Partial<Budget>) => {
       const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      
+      const payload: any = { ...data, user_id: user.id };
+      
+      // Remove id if it's null or undefined for new records
+      if (!payload.id) {
+        delete payload.id;
+      }
+
+      console.log('Sending budget upsert payload:', payload);
+
       const { data: result, error } = await supabase
         .from('budgets')
-        .upsert({ ...data, user_id: user?.id }, { onConflict: 'user_id,category_id,month' })
-        .select()
-        .single();
-      if (error) throw error;
+        .upsert(payload, { onConflict: 'user_id,category_id,month' })
+        .select();
+      
+      if (error) {
+        console.error('Budget upsert error details:', error);
+        throw error;
+      }
       await api.logs.create('Update Budget', `Updated budget for category ID ${data.category_id}`);
-      return result;
+      return result ? result[0] : null;
     },
     delete: async (id: number | string) => {
+      console.log('Attempting to delete budget with ID:', id);
+      const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+      
       const { error } = await supabase
         .from('budgets')
         .delete()
-        .eq('id', id);
-      if (error) throw error;
-      await api.logs.create('Delete Budget', `Deleted budget ID ${id}`);
+        .eq('id', numericId);
+      
+      if (error) {
+        console.error('Supabase budget delete error:', error);
+        throw error;
+      }
+      
+      console.log('Successfully deleted budget ID:', numericId);
+      await api.logs.create('Delete Budget', `Deleted budget ID ${numericId}`);
     },
   },
 

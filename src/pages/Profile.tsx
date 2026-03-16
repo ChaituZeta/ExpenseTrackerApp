@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../App';
 import { api } from '../lib/api';
-import { User, Camera, Phone, Mail, User as UserIcon, Globe, Save, Loader2 } from 'lucide-react';
+import { User, Camera, Phone, Mail, User as UserIcon, Globe, Save, Loader2, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export default function Profile() {
@@ -46,6 +46,17 @@ export default function Profile() {
                 ) : (
                   name.charAt(0)
                 )}
+                <div className="absolute bottom-0 right-0 p-1 bg-white rounded-full shadow-md">
+                  {user?.role === 'admin' ? (
+                    <div className="bg-red-500 p-1 rounded-full">
+                      <ShieldCheck className="w-4 h-4 text-white" />
+                    </div>
+                  ) : (
+                    <div className="bg-blue-500 p-1 rounded-full">
+                      <CheckCircle2 className="w-4 h-4 text-white" />
+                    </div>
+                  )}
+                </div>
               </div>
               <button className="absolute bottom-0 right-0 p-2 bg-brand-accent text-white rounded-full shadow-lg hover:bg-brand-accent-hover transition-colors">
                 <Camera className="w-5 h-5" />

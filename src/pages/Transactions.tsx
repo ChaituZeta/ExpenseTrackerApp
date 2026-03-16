@@ -6,6 +6,8 @@ import { Plus, Search, Filter, Trash2, Calendar, IndianRupee, Tag, FileText, Che
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 
+import LoadingSpinner from '../components/LoadingSpinner';
+
 export default function Transactions() {
   const [searchParams] = useSearchParams();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -247,56 +249,90 @@ export default function Transactions() {
 
       {/* Transactions List */}
       <div className="bg-white rounded-3xl border border-black/5 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-black/5">
-                <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Date</th>
-                <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Category</th>
-                <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Description</th>
-                <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-wider text-right">Amount</th>
-                <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-wider text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black/5">
-              {loading ? (
-                <tr><td colSpan={5} className="px-6 py-12 text-center text-zinc-500">Loading transactions...</td></tr>
-              ) : filteredTransactions.length === 0 ? (
-                <tr><td colSpan={5} className="px-6 py-12 text-center text-zinc-500">No transactions found.</td></tr>
-              ) : (
-                filteredTransactions.map((t) => (
-                  <tr key={t.id} className="hover:bg-zinc-50 transition-colors group">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-zinc-600">
-                      {format(new Date(t.date), 'MMM d, yyyy')}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-[10px] font-bold uppercase" style={{ backgroundColor: t.category_color }}>
-                          {t.category_name?.substring(0, 2)}
-                        </div>
-                        <span className="text-sm font-bold text-zinc-900">{t.category_name}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-zinc-600 max-w-xs truncate">
-                      {t.description || '-'}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold text-right ${t.type === 'income' ? 'text-emerald-600' : 'text-zinc-900'}`}>
-                      {t.type === 'income' ? '+' : '-'}₹{t.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <button 
-                        onClick={() => handleDelete(t.id)}
-                        className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
+        {loading ? (
+          <LoadingSpinner message="Loading transactions..." />
+        ) : filteredTransactions.length === 0 ? (
+          <div className="px-6 py-12 text-center text-zinc-500">No transactions found.</div>
+        ) : (
+          <>
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-black/5">
+                    <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Date</th>
+                    <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Category</th>
+                    <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Description</th>
+                    <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-wider text-right">Amount</th>
+                    <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-wider text-right">Actions</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody className="divide-y divide-black/5">
+                  {filteredTransactions.map((t) => (
+                    <tr key={t.id} className="hover:bg-zinc-50 transition-colors group">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-zinc-600">
+                        {format(new Date(t.date), 'MMM d, yyyy')}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-[10px] font-bold uppercase" style={{ backgroundColor: t.category_color }}>
+                            {t.category_name?.substring(0, 2)}
+                          </div>
+                          <span className="text-sm font-bold text-zinc-900">{t.category_name}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-zinc-600 max-w-xs truncate">
+                        {t.description || '-'}
+                      </td>
+                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold text-right ${t.type === 'income' ? 'text-emerald-600' : 'text-zinc-900'}`}>
+                        {t.type === 'income' ? '+' : '-'}₹{t.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <button 
+                          onClick={() => handleDelete(t.id)}
+                          className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile List */}
+            <div className="md:hidden divide-y divide-black/5">
+              {filteredTransactions.map((t) => (
+                <div key={t.id} className="p-4 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-xs font-bold uppercase shrink-0" style={{ backgroundColor: t.category_color }}>
+                      {t.category_name?.substring(0, 2)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-zinc-900 truncate">{t.category_name}</span>
+                        <span className="text-[10px] text-zinc-400 whitespace-nowrap">{format(new Date(t.date), 'MMM d')}</span>
+                      </div>
+                      <p className="text-xs text-zinc-500 truncate">{t.description || 'No description'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className={`text-sm font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-zinc-900'}`}>
+                      {t.type === 'income' ? '+' : '-'}₹{t.amount.toLocaleString('en-IN')}
+                    </span>
+                    <button 
+                      onClick={() => handleDelete(t.id)}
+                      className="p-2 text-zinc-400 hover:text-red-600 active:bg-red-50 rounded-lg transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

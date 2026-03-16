@@ -3,10 +3,12 @@ import { api } from '../lib/api';
 import { useAuth } from '../App';
 import { useNavigate } from 'react-router-dom';
 import { Summary, Transaction } from '../types';
-import { TrendingUp, TrendingDown, Wallet, Plus, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, Plus, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 import { motion } from 'motion/react';
 import { format } from 'date-fns';
+
+import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -31,7 +33,7 @@ export default function Dashboard() {
     }).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="flex items-center justify-center h-64">Loading dashboard...</div>;
+  if (loading) return <LoadingSpinner message="Loading your dashboard..." />;
   const stats = [
     { name: 'Total Balance', value: summary?.balance || 0, icon: Wallet, color: 'bg-brand-primary', textColor: 'text-white' },
     { name: 'Total Income', value: summary?.totalIncome || 0, icon: TrendingUp, color: 'bg-emerald-50', textColor: 'text-emerald-600' },
@@ -42,12 +44,23 @@ export default function Dashboard() {
     <div className="space-y-8">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-brand-primary/10 flex items-center justify-center text-brand-primary text-2xl font-bold overflow-hidden border-2 border-white shadow-sm">
+          <div className="w-16 h-16 rounded-2xl bg-brand-primary/10 flex items-center justify-center text-brand-primary text-2xl font-bold overflow-hidden border-2 border-white shadow-sm relative">
             {user?.avatar_url ? (
               <img src={user.avatar_url} alt={user.name} className="w-full h-full object-cover" />
             ) : (
               user?.name.charAt(0)
             )}
+            <div className="absolute bottom-0 right-0 p-0.5 bg-white rounded-tl-lg">
+              {user?.role === 'admin' ? (
+                <div className="bg-red-500 p-0.5 rounded-md shadow-sm">
+                  <ShieldCheck className="w-3 h-3 text-white" />
+                </div>
+              ) : (
+                <div className="bg-blue-500 p-0.5 rounded-md shadow-sm">
+                  <CheckCircle2 className="w-3 h-3 text-white" />
+                </div>
+              )}
+            </div>
           </div>
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Dashboard</h1>

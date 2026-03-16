@@ -17,6 +17,9 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import AdminDashboard from './pages/AdminDashboard';
 import Profile from './pages/Profile';
+import Home from './pages/Home';
+import SplashScreen from './components/SplashScreen';
+import LoadingSpinner from './components/LoadingSpinner';
 
 interface AuthContextType {
   user: User | null;
@@ -70,6 +73,8 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     api.auth.logout().then(() => setUser(null));
   };
 
+  if (loading) return <SplashScreen />;
+
   return (
     <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
@@ -79,13 +84,13 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
-  if (loading) return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  if (loading) return <LoadingSpinner fullScreen message="Authenticating..." />;
   return user ? <>{children}</> : <Navigate to="/login" />;
 };
 
 const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
-  if (loading) return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  if (loading) return <LoadingSpinner fullScreen message="Verifying admin access..." />;
   return user?.role === 'admin' ? <>{children}</> : <Navigate to="/" />;
 };
 
@@ -95,7 +100,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
 
   const navItems = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Transactions', path: '/transactions', icon: Receipt },
     { name: 'Categories', path: '/categories', icon: Tag },
     { name: 'Budgets', path: '/budgets', icon: Target },
@@ -114,7 +119,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <aside className="hidden md:flex flex-col w-64 bg-brand-primary p-6 shadow-2xl z-50">
         <div className="flex items-center gap-3 mb-10 px-2">
           <img src={logoUrl} alt="Logo" className="w-10 h-10 rounded-xl object-cover border-2 border-white/20" referrerPolicy="no-referrer" />
-          <span className="font-bold text-xl tracking-tight text-white">Expense Tracker</span>
+          <span className="font-bold text-xl tracking-tight text-white">FinTrack</span>
         </div>
 
         <nav className="flex-1 space-y-2">
@@ -138,8 +143,14 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <div className="px-4 py-3 mb-4 bg-white/5 rounded-2xl">
             <div className="flex items-center justify-between mb-1">
               <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Logged In As</p>
-              {user?.role === 'admin' && (
-                <span className="text-[10px] bg-brand-accent text-white px-1.5 py-0.5 rounded-lg font-black uppercase tracking-tighter">Admin</span>
+              {user?.role === 'admin' ? (
+                <span className="flex items-center gap-0.5 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-lg font-black uppercase tracking-tighter">
+                  Admin <ShieldCheck className="w-2.5 h-2.5" />
+                </span>
+              ) : (
+                <span className="flex items-center gap-0.5 text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded-lg font-black uppercase tracking-tighter">
+                  User <ShieldCheck className="w-2.5 h-2.5" />
+                </span>
               )}
             </div>
             <p className="font-bold text-white truncate">{user?.name}</p>
@@ -159,7 +170,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <header className="md:hidden flex items-center justify-between p-4 bg-brand-primary sticky top-0 z-50 shadow-lg">
         <div className="flex items-center gap-2">
           <img src={logoUrl} alt="Logo" className="w-8 h-8 rounded-lg object-cover" referrerPolicy="no-referrer" />
-          <span className="font-bold text-lg tracking-tight text-white">Expense Tracker</span>
+          <span className="font-bold text-lg tracking-tight text-white">FinTrack</span>
         </div>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-white">
           {isMobileMenuOpen ? <X /> : <Menu />}
@@ -227,6 +238,7 @@ export default function App() {
     <AuthProvider>
       <Router>
         <Routes>
+          <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -237,7 +249,7 @@ export default function App() {
               <PrivateRoute>
                 <Layout>
                   <Routes>
-                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/dashboard" element={<Dashboard />} />
                     <Route path="/transactions" element={<Transactions />} />
                     <Route path="/categories" element={<Categories />} />
                     <Route path="/budgets" element={<Budgets />} />
@@ -250,6 +262,7 @@ export default function App() {
                         </AdminRoute>
                       } 
                     />
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
                   </Routes>
                 </Layout>
               </PrivateRoute>

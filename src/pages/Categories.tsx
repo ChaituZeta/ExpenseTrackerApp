@@ -4,6 +4,8 @@ import { Category } from '../types';
 import { Plus, Trash2, Tag, Palette, Type } from 'lucide-react';
 import { motion } from 'motion/react';
 
+import LoadingSpinner from '../components/LoadingSpinner';
+
 export default function Categories() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +26,8 @@ export default function Categories() {
       setLoading(false);
     }
   };
+
+  if (loading) return <LoadingSpinner message="Loading categories..." />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

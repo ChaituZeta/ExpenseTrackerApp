@@ -5,6 +5,8 @@ import { Target, Plus, AlertCircle, CheckCircle2, TrendingUp, Trash2, Edit2, X }
 import { format, startOfMonth } from 'date-fns';
 import { motion } from 'motion/react';
 
+import LoadingSpinner from '../components/LoadingSpinner';
+
 export default function Budgets() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -39,9 +41,17 @@ export default function Budgets() {
     }
   };
 
+  if (loading) return <LoadingSpinner message="Loading budgets..." />;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      console.log('Upserting budget:', {
+        id: editingId,
+        category_id: categoryId,
+        amount,
+        month
+      });
       await api.budgets.upsert({
         id: editingId as any,
         category_id: parseInt(categoryId),
@@ -50,19 +60,22 @@ export default function Budgets() {
       });
       setAmount('');
       setEditingId(null);
-      loadData();
-    } catch (err) {
-      alert('Failed to save budget');
+      await loadData();
+    } catch (err: any) {
+      console.error('Failed to save budget:', err);
+      alert(`Failed to save budget: ${err.message || 'Unknown error'}`);
     }
   };
 
   const handleDelete = async (id: number | string) => {
     if (confirm('Are you sure you want to delete this budget?')) {
       try {
+        console.log('Deleting budget:', id);
         await api.budgets.delete(id);
-        loadData();
-      } catch (err) {
-        alert('Failed to delete budget');
+        await loadData();
+      } catch (err: any) {
+        console.error('Failed to delete budget:', err);
+        alert(`Failed to delete budget: ${err.message || 'Unknown error'}`);
       }
     }
   };
