@@ -65,7 +65,10 @@ export default function AdminDashboard() {
           'Authorization': `Bearer ${session?.access_token}`
         }
       });
-      if (!response.ok) throw new Error('Failed to sync profiles');
+      const contentType = response.headers.get("content-type");
+      if (!response.ok || !contentType || !contentType.includes("application/json")) {
+        throw new Error('Failed to sync profiles. Backend might be unavailable.');
+      }
       const result = await response.json();
       alert(`Sync complete! ${result.synced.length} profiles created.`);
       fetchData();

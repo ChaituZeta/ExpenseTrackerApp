@@ -19,7 +19,7 @@ export default function Login() {
     setLoading(true);
     try {
       const res = await api.auth.login({ email, password });
-      login(res.user);
+      login(res.user as any);
       navigate('/');
     } catch (err: any) {
       setError(err.message);
@@ -64,7 +64,7 @@ export default function Login() {
           <div>
             <div className="flex justify-between items-center mb-2 ml-1">
               <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Password</label>
-              <Link to="/forgot-password" size="sm" className="text-xs font-bold text-brand-primary hover:underline">
+              <Link to="/forgot-password" title="Forgot Password" className="text-xs font-bold text-brand-primary hover:underline">
                 Forgot?
               </Link>
             </div>

@@ -198,7 +198,7 @@ export default function Budgets() {
               </div>
             ) : (
               budgets.filter(b => b.month === month).map((b, i) => {
-                const spent = getSpendingForCategory(b.category_id);
+                const spent = getSpendingForCategory(b.category_id as number);
                 const percent = Math.min((spent / b.amount) * 100, 100);
                 const isOver = spent > b.amount;
                 const isNear = spent > b.amount * 0.8 && !isOver;

@@ -213,7 +213,7 @@ export default function Categories() {
                     </div>
                   </div>
                   <button
-                    onClick={() => handleDelete(c.id)}
+                    onClick={() => handleDelete(c.id as number)}
                     className="p-2 text-zinc-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
                   >
                     <Trash2 className="w-5 h-5" />

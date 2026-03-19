@@ -21,6 +21,7 @@ import Home from './pages/Home';
 import SplashScreen from './components/SplashScreen';
 import LoadingSpinner from './components/LoadingSpinner';
 import NotFound from './pages/NotFound';
+import ErrorBoundary from './components/ErrorBoundary';
 
 interface AuthContextType {
   user: User | null;
@@ -236,9 +237,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <Routes>
+    <ErrorBoundary>
+      <AuthProvider>
+        <Router>
+          <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -273,5 +275,6 @@ export default function App() {
         </Routes>
       </Router>
     </AuthProvider>
-  );
+  </ErrorBoundary>
+);
 }

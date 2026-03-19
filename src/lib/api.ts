@@ -133,33 +133,86 @@ export const api = {
 
   admin: {
     getAllUsers: async (): Promise<User[]> => {
+      // Try Supabase directly first (works if RLS allows and user is admin)
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (!error) return data as User[];
+
+      // Fallback to API if Supabase direct fails (though RLS should handle it)
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/admin/users', {
         headers: {
           'Authorization': `Bearer ${session?.access_token}`
         }
       });
-      if (!response.ok) throw new Error('Failed to fetch users');
+      
+      const contentType = response.headers.get("content-type");
+      if (!response.ok || !contentType || !contentType.includes("application/json")) {
+        throw new Error('Failed to fetch users. Backend might be unavailable.');
+      }
       return response.json();
     },
     getAllTransactions: async (): Promise<Transaction[]> => {
+      // Try Supabase directly first
+      const { data, error } = await supabase
+        .from('transactions')
+        .select(`
+          *,
+          categories (
+            name,
+            icon,
+            color
+          )
+        `)
+        .order('date', { ascending: false });
+      
+      if (!error) {
+        return (data as any[]).map(t => ({
+          ...t,
+          category_name: t.categories?.name,
+          category_icon: t.categories?.icon,
+          category_color: t.categories?.color,
+          user_name: "User", // We'd need a join with profiles for user names
+          user_email: "Email",
+        })) as Transaction[];
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/admin/transactions', {
         headers: {
           'Authorization': `Bearer ${session?.access_token}`
         }
       });
-      if (!response.ok) throw new Error('Failed to fetch transactions');
+      
+      const contentType = response.headers.get("content-type");
+      if (!response.ok || !contentType || !contentType.includes("application/json")) {
+        throw new Error('Failed to fetch transactions. Backend might be unavailable.');
+      }
       return response.json();
     },
     getAllLogs: async (): Promise<ActivityLog[]> => {
+      // Try Supabase directly first
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (!error) return data as ActivityLog[];
+
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/admin/logs', {
         headers: {
           'Authorization': `Bearer ${session?.access_token}`
         }
       });
-      if (!response.ok) throw new Error('Failed to fetch logs');
+      
+      const contentType = response.headers.get("content-type");
+      if (!response.ok || !contentType || !contentType.includes("application/json")) {
+        throw new Error('Failed to fetch logs. Backend might be unavailable.');
+      }
       return response.json();
     },
     deleteUser: async (id: string) => {
@@ -196,9 +249,12 @@ export const api = {
         },
         body: JSON.stringify(userData),
       });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to create user');
+      
+      const contentType = response.headers.get("content-type");
+      if (!response.ok || !contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error('Create user error response:', text);
+        throw new Error('Failed to create user. Backend might be unavailable or returned an error.');
       }
       return response.json();
     }

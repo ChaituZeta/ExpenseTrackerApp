@@ -289,7 +289,7 @@ export default function Transactions() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <button 
-                          onClick={() => handleDelete(t.id)}
+                          onClick={() => handleDelete(t.id as number)}
                           className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -322,7 +322,7 @@ export default function Transactions() {
                       {t.type === 'income' ? '+' : '-'}₹{t.amount.toLocaleString('en-IN')}
                     </span>
                     <button 
-                      onClick={() => handleDelete(t.id)}
+                      onClick={() => handleDelete(t.id as number)}
                       className="p-2 text-zinc-400 hover:text-red-600 active:bg-red-50 rounded-lg transition-all"
                     >
                       <Trash2 className="w-4 h-4" />
