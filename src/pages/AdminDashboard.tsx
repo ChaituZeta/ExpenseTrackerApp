@@ -199,8 +199,7 @@ export default function AdminDashboard() {
             <button
               onClick={handleSyncProfiles}
               disabled={syncing}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-zinc-100 text-zinc-700 px-4 py-2 rounded-xl font-bold hover:bg-zinc-200 transition-all disabled:opacity-50 text-sm"
-              title="Sync existing Auth users to Profiles table"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-zinc-100 text-zinc-900 px-4 py-2 rounded-xl font-bold hover:bg-zinc-200 transition-all text-sm disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
               {syncing ? 'Syncing...' : 'Sync'}
