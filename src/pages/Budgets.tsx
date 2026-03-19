@@ -176,14 +176,15 @@ export default function Budgets() {
 
         {/* Budgets Progress */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="flex items-center justify-between bg-zinc-900 text-white p-6 rounded-3xl shadow-xl">
-            <div>
-              <p className="text-zinc-400 text-sm font-medium">Total Budgeted</p>
-              <p className="text-3xl font-bold">₹{budgets.filter(b => b.month === month).reduce((sum, b) => sum + b.amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+          <div className="flex flex-col sm:flex-row items-center justify-between bg-zinc-900 text-white p-6 sm:p-8 rounded-3xl shadow-xl gap-6 sm:gap-4">
+            <div className="text-center sm:text-left w-full sm:w-auto min-w-0">
+              <p className="text-zinc-400 text-sm font-medium mb-1">Total Budgeted</p>
+              <p className="text-2xl sm:text-3xl font-bold tracking-tight truncate">₹{budgets.filter(b => b.month === month).reduce((sum, b) => sum + b.amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
             </div>
-            <div className="text-right">
-              <p className="text-zinc-400 text-sm font-medium">Total Spent</p>
-              <p className="text-3xl font-bold">₹{currentMonthTransactions.reduce((sum, t) => sum + t.amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            <div className="h-px w-full bg-white/10 sm:hidden" />
+            <div className="text-center sm:text-right w-full sm:w-auto min-w-0">
+              <p className="text-zinc-400 text-sm font-medium mb-1">Total Spent</p>
+              <p className="text-2xl sm:text-3xl font-bold tracking-tight truncate">₹{currentMonthTransactions.reduce((sum, t) => sum + t.amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
             </div>
           </div>
 

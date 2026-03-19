@@ -98,7 +98,7 @@ export default function Categories() {
 
   return (
     <div className="space-y-8">
-      <header className="flex justify-between items-center">
+      <header className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Categories</h1>
           <p className="text-zinc-500">Organize your finances with custom categories.</p>

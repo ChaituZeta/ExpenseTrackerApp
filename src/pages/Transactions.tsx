@@ -230,14 +230,14 @@ export default function Transactions() {
             className="w-full pl-12 pr-4 py-3 rounded-2xl bg-white border border-black/5 focus:border-black outline-none transition-all"
           />
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
+        <div className="flex flex-wrap gap-2">
           {(['all', 'income', 'expense', 'adjustment'] as const).map(type => (
             <button
               key={type}
               onClick={() => setFilterType(type)}
-              className={`px-5 py-3 rounded-2xl font-bold capitalize transition-all whitespace-nowrap ${
+              className={`flex-1 sm:flex-none px-4 sm:px-6 py-3 rounded-2xl font-bold capitalize transition-all text-sm sm:text-base ${
                 filterType === type 
-                  ? 'bg-brand-primary text-white shadow-md' 
+                  ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20' 
                   : 'bg-white text-zinc-500 hover:bg-zinc-50 border border-black/5'
               }`}
             >

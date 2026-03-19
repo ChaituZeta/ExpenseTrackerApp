@@ -20,6 +20,7 @@ import Profile from './pages/Profile';
 import Home from './pages/Home';
 import SplashScreen from './components/SplashScreen';
 import LoadingSpinner from './components/LoadingSpinner';
+import NotFound from './pages/NotFound';
 
 interface AuthContextType {
   user: User | null;
@@ -262,7 +263,8 @@ export default function App() {
                         </AdminRoute>
                       } 
                     />
-                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                    <Route path="/404" element={<NotFound />} />
+                    <Route path="*" element={<Navigate to="/404" replace />} />
                   </Routes>
                 </Layout>
               </PrivateRoute>

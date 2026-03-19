@@ -262,22 +262,22 @@ export default function AdminDashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 p-1 bg-zinc-100 rounded-2xl w-fit">
+      <div className="flex flex-wrap gap-2 p-1 bg-zinc-100 rounded-2xl w-full sm:w-fit">
         <button
           onClick={() => setActiveTab('users')}
-          className={`px-6 py-2 rounded-xl font-medium transition-all ${activeTab === 'users' ? 'bg-white text-brand-primary shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}
+          className={`flex-1 sm:flex-none px-6 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${activeTab === 'users' ? 'bg-white text-brand-primary shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}
         >
           Users
         </button>
         <button
           onClick={() => setActiveTab('transactions')}
-          className={`px-6 py-2 rounded-xl font-medium transition-all ${activeTab === 'transactions' ? 'bg-white text-brand-primary shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}
+          className={`flex-1 sm:flex-none px-6 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${activeTab === 'transactions' ? 'bg-white text-brand-primary shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}
         >
           Transactions
         </button>
         <button
           onClick={() => setActiveTab('logs')}
-          className={`px-6 py-2 rounded-xl font-medium transition-all ${activeTab === 'logs' ? 'bg-white text-brand-primary shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}
+          className={`flex-1 sm:flex-none px-6 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${activeTab === 'logs' ? 'bg-white text-brand-primary shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}
         >
           Activity Logs
         </button>

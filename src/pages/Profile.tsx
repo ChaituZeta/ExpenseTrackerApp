@@ -30,9 +30,11 @@ export default function Profile() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Profile Settings</h1>
-        <p className="text-zinc-500">Manage your personal information and preferences</p>
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Profile Settings</h1>
+          <p className="text-zinc-500">Manage your personal information and preferences</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

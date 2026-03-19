@@ -76,8 +76,7 @@ export default function Dashboard() {
         </button>
       </header>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {stats.map((stat, i) => (
           <motion.div
             key={stat.name}
@@ -92,7 +91,7 @@ export default function Dashboard() {
               </div>
             </div>
             <p className="text-zinc-500 text-sm font-medium">{stat.name}</p>
-            <p className="text-3xl font-bold tracking-tight mt-1">
+            <p className="text-2xl sm:text-3xl font-bold tracking-tight mt-1 truncate">
               ₹{stat.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </p>
           </motion.div>
