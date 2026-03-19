@@ -27,6 +27,12 @@ const supabase = createClient(
 );
 
 console.log("Supabase initialized. Using Service Role Key:", !!(supabaseServiceKey && supabaseServiceKey !== "your-service-role-key"));
+if (supabaseServiceKey) {
+  console.log("SUPABASE_SERVICE_ROLE_KEY length:", supabaseServiceKey.length);
+  console.log("SUPABASE_SERVICE_ROLE_KEY starts with:", supabaseServiceKey.substring(0, 10));
+} else {
+  console.warn("SUPABASE_SERVICE_ROLE_KEY is undefined or empty.");
+}
 if (!supabaseServiceKey || supabaseServiceKey === "your-service-role-key") {
   console.warn("WARNING: SUPABASE_SERVICE_ROLE_KEY is missing or using placeholder. Admin features may fail due to RLS.");
 }
@@ -99,8 +105,12 @@ async function startServer() {
 
   // Admin Middleware
   const isAdmin = async (req: any, res: any, next: any) => {
+    console.log(`Admin middleware check for: ${req.method} ${req.url}`);
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ message: "Unauthorized" });
+    if (!authHeader) {
+      console.warn("Admin middleware: No auth header");
+      return res.status(401).json({ message: "Unauthorized" });
+    }
     
     try {
       // Extract token (assuming Bearer token)
@@ -130,7 +140,7 @@ async function startServer() {
           await supabase.from('profiles').upsert({
             id: user.id,
             email: user.email,
-            name: user.user_metadata.name || 'Admin',
+            name: user.user_metadata?.name || 'Admin',
             role: 'admin'
           });
         }
@@ -286,7 +296,9 @@ async function startServer() {
   app.post("/api/admin/sync-profiles", isAdmin, async (req, res) => {
     try {
       if (!supabase.auth.admin) {
-        throw new Error("Supabase Admin SDK not initialized. Ensure SUPABASE_SERVICE_ROLE_KEY is set.");
+        return res.status(500).json({ 
+          message: "Supabase Admin SDK not initialized. Ensure SUPABASE_SERVICE_ROLE_KEY is set in Secrets." 
+        });
       }
       // Fetch all users from Auth
       const { data: { users: authUsers }, error: authError } = await supabase.auth.admin.listUsers();
@@ -297,7 +309,7 @@ async function startServer() {
         const { error: upsertError } = await supabase.from('profiles').upsert([{
           id: user.id,
           email: user.email,
-          name: user.user_metadata.name || user.email?.split('@')[0],
+          name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
           role: user.email === 'cbogineni@gmail.com' ? 'admin' : 'user'
         }], { onConflict: 'id' });
         
@@ -419,12 +431,18 @@ async function startServer() {
     }
 
     try {
+      if (!supabase.auth.admin) {
+        return res.status(500).json({ 
+          message: "Supabase Admin SDK not initialized. Ensure SUPABASE_SERVICE_ROLE_KEY is set in Secrets." 
+        });
+      }
+
       // Update password in Supabase Auth (requires admin/service role or user session)
       const { data: userProfile, error: profileError } = await supabase
         .from('profiles')
         .select('id')
         .eq('email', stored.email)
-        .single();
+        .maybeSingle();
 
       if (profileError || !userProfile) {
         console.error("Profile lookup error during reset:", JSON.stringify(profileError, null, 2));
@@ -447,6 +465,15 @@ async function startServer() {
       console.error("Reset password error:", error);
       res.status(500).json({ message: "Failed to reset password" });
     }
+  });
+
+  // Global error handler
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Global error handler caught:", err);
+    res.status(err.status || 500).json({ 
+      message: err.message || "Internal server error",
+      error: process.env.NODE_ENV === 'development' ? err : {}
+    });
   });
 
   // Vite middleware for development

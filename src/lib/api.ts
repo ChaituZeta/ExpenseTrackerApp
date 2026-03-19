@@ -299,6 +299,7 @@ export const api = {
     },
     syncProfiles: async () => {
       const { data: { session } } = await supabase.auth.getSession();
+      console.log('Syncing profiles, session exists:', !!session);
       const response = await fetch('/api/admin/sync-profiles', {
         method: 'POST',
         headers: {
@@ -307,6 +308,8 @@ export const api = {
       });
       
       const contentType = response.headers.get("content-type");
+      console.log('Sync profiles response status:', response.status, 'content-type:', contentType);
+      
       if (!response.ok) {
         let errorMessage = 'Failed to sync profiles.';
         if (contentType && contentType.includes("application/json")) {
@@ -314,7 +317,7 @@ export const api = {
           errorMessage = err.message || errorMessage;
         } else {
           const text = await response.text();
-          console.error('Sync profiles non-JSON error:', text);
+          console.error('Sync profiles non-JSON error body:', text.substring(0, 200));
           errorMessage += ' Backend might be unavailable or returned an error.';
         }
         throw new Error(errorMessage);
