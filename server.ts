@@ -103,6 +103,18 @@ async function startServer() {
   const app = express();
   app.use(express.json());
 
+  // Request logger
+  app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    next();
+  });
+
+  // Request logger
+  app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    next();
+  });
+
   // Admin Middleware
   const isAdmin = async (req: any, res: any, next: any) => {
     console.log(`Admin middleware check for: ${req.method} ${req.url}`);
@@ -294,16 +306,23 @@ async function startServer() {
   });
 
   app.post("/api/admin/sync-profiles", isAdmin, async (req, res) => {
+    console.log("Sync profiles route hit");
     try {
       if (!supabase.auth.admin) {
+        console.error("Supabase Admin SDK not initialized");
         return res.status(500).json({ 
           message: "Supabase Admin SDK not initialized. Ensure SUPABASE_SERVICE_ROLE_KEY is set in Secrets." 
         });
       }
       // Fetch all users from Auth
+      console.log("Listing users from auth.admin...");
       const { data: { users: authUsers }, error: authError } = await supabase.auth.admin.listUsers();
-      if (authError) throw authError;
+      if (authError) {
+        console.error("Auth admin list users error:", authError.message);
+        throw authError;
+      }
 
+      console.log(`Found ${authUsers.length} users in auth. Syncing to profiles...`);
       const results = [];
       for (const user of authUsers) {
         const { error: upsertError } = await supabase.from('profiles').upsert([{
@@ -313,13 +332,17 @@ async function startServer() {
           role: user.email === 'cbogineni@gmail.com' ? 'admin' : 'user'
         }], { onConflict: 'id' });
         
-        if (!upsertError) results.push(user.email);
-        else console.error(`Failed to sync profile for ${user.email}:`, upsertError.message);
+        if (!upsertError) {
+          results.push(user.email);
+        } else {
+          console.error(`Failed to sync profile for ${user.email}:`, upsertError.message);
+        }
       }
 
+      console.log(`Sync complete. Synced ${results.length} profiles.`);
       res.json({ success: true, synced: results });
     } catch (error: any) {
-      console.error("Sync profiles error:", error.message);
+      console.error("Sync profiles catch error:", error.message || error);
       res.status(500).json({ message: error.message || "Internal server error syncing profiles" });
     }
   });

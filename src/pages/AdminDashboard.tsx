@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { User, Transaction, ActivityLog } from '../types';
-import { Users, Receipt, History, Search, Filter, Download, Trash2, Shield, ShieldAlert, UserPlus, X, CheckCircle2, ShieldCheck, RefreshCw, Edit2 } from 'lucide-react';
+import { Users, Receipt, History, Search, Filter, Download, Trash2, Shield, ShieldAlert, UserPlus, X, CheckCircle2, ShieldCheck, RefreshCw, Edit2, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { format } from 'date-fns';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
@@ -16,6 +16,8 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'users' | 'transactions' | 'logs'>('users');
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterRole, setFilterRole] = useState<'all' | 'admin' | 'user'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -29,6 +31,7 @@ export default function AdminDashboard() {
     sendEmail: true
   });
   const [creating, setCreating] = useState(false);
+  const [showNewUserPassword, setShowNewUserPassword] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -151,19 +154,22 @@ export default function AdminDashboard() {
     }
   };
 
-  const filteredUsers = users.filter(u => 
-    (u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (u.email || '').toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredUsers = users.filter(u =>
+    ((u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+     (u.email || '').toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (filterRole === 'all' || u.role === filterRole)
   );
 
-  const filteredTransactions = transactions.filter(t => 
-    (t.description || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (t.user_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredTransactions = transactions.filter(t =>
+    ((t.user_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+     (t.description || '').toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (filterType === 'all' || t.type === filterType)
   );
 
-  const filteredLogs = logs.filter(l => 
-    (l.action || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (l.user_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredLogs = logs.filter(l =>
+    ((l.user_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+     (l.action || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+     (l.details || '').toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   // Chart Data
@@ -640,14 +646,23 @@ export default function AdminDashboard() {
 
               <div className="space-y-2">
                 <label className="text-sm font-bold text-zinc-700">Password</label>
-                <input
-                  type="password"
-                  required
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:border-brand-primary outline-none"
-                  placeholder="••••••••"
-                />
+                <div className="relative">
+                  <input
+                    type={showNewUserPassword ? "text" : "password"}
+                    required
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:border-brand-primary outline-none pr-12"
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewUserPassword(!showNewUserPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-brand-primary transition-colors"
+                  >
+                    {showNewUserPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">
