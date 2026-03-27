@@ -70,37 +70,59 @@ export const api = {
     },
     
     me: async (): Promise<{ user: User | null }> => {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error || !user) return { user: null };
-      
-      return {
-        user: {
-          id: user.id,
-          email: user.email!,
-          name: user.user_metadata.name,
-          phone: user.user_metadata.phone,
-          avatar_url: user.user_metadata.avatar_url,
-          currency: user.user_metadata.currency || '₹',
-          role: user.email === 'cbogineni@gmail.com' ? 'admin' : 'user',
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error) {
+          // If there's a refresh token error, clear the session
+          if (error.message.includes('Refresh Token Not Found') || error.message.includes('refresh_token_not_found')) {
+            await supabase.auth.signOut();
+          }
+          return { user: null };
         }
-      };
+        if (!user) return { user: null };
+        
+        return {
+          user: {
+            id: user.id,
+            email: user.email!,
+            name: user.user_metadata.name,
+            phone: user.user_metadata.phone,
+            avatar_url: user.user_metadata.avatar_url,
+            currency: user.user_metadata.currency || '₹',
+            role: user.email === 'cbogineni@gmail.com' ? 'admin' : 'user',
+          }
+        };
+      } catch (err) {
+        console.error('Error in api.auth.me:', err);
+        return { user: null };
+      }
     },
 
     updateProfile: async (data: Partial<User>) => {
-      const { data: result, error } = await supabase.auth.updateUser({
-        data: {
-          name: data.name,
-          phone: data.phone,
-          currency: data.currency,
-          avatar_url: data.avatar_url,
+      try {
+        const { data: result, error } = await supabase.auth.updateUser({
+          data: {
+            name: data.name,
+            phone: data.phone,
+            currency: data.currency,
+            avatar_url: data.avatar_url,
+          }
+        });
+        if (error) {
+          if (error.message.includes('Refresh Token Not Found') || error.message.includes('refresh_token_not_found')) {
+            await supabase.auth.signOut();
+          }
+          throw error;
         }
-      });
-      if (error) throw error;
 
-      // Log activity
-      await api.logs.create('Update Profile', `User updated their profile`);
+        // Log activity
+        await api.logs.create('Update Profile', `User updated their profile`);
 
-      return result;
+        return result;
+      } catch (err) {
+        console.error('Error in api.auth.updateProfile:', err);
+        throw err;
+      }
     },
 
     forgotPassword: async (identifier: string) => {
@@ -110,9 +132,23 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier })
       });
+      
+      const contentType = response.headers.get("content-type");
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.message || 'Failed to send OTP');
+        let errorMessage = 'Failed to send OTP';
+        if (contentType && contentType.includes("application/json")) {
+          const err = await response.json();
+          errorMessage = err.message || errorMessage;
+        } else {
+          const text = await response.text();
+          console.error('Forgot password non-JSON error:', text.substring(0, 200));
+          errorMessage += ' Backend might be unavailable.';
+        }
+        throw new Error(errorMessage);
+      }
+      
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error('Invalid response from server. Expected JSON.');
       }
       return response.json();
     },
@@ -123,9 +159,23 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
+      
+      const contentType = response.headers.get("content-type");
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.message || 'Failed to reset password');
+        let errorMessage = 'Failed to reset password';
+        if (contentType && contentType.includes("application/json")) {
+          const err = await response.json();
+          errorMessage = err.message || errorMessage;
+        } else {
+          const text = await response.text();
+          console.error('Reset password non-JSON error:', text.substring(0, 200));
+          errorMessage += ' Backend might be unavailable.';
+        }
+        throw new Error(errorMessage);
+      }
+      
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error('Invalid response from server. Expected JSON.');
       }
       return response.json();
     }
@@ -140,33 +190,42 @@ export const api = {
         .order('created_at', { ascending: false });
       
       if (!error) return data as User[];
+      
+      console.warn('Supabase direct profiles fetch failed, falling back to API:', error.message);
 
       // Fallback to API if Supabase direct fails (though RLS should handle it)
       const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch('/api/admin/users', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token}`
+      if (!session) throw new Error('Not authenticated');
+
+      try {
+        const response = await fetch('/api/admin/users', {
+          headers: {
+            'Authorization': `Bearer ${session?.access_token}`
+          }
+        });
+        
+        const contentType = response.headers.get("content-type");
+        if (!response.ok) {
+          let errorMessage = 'Failed to fetch users.';
+          if (contentType && contentType.includes("application/json")) {
+            const err = await response.json();
+            errorMessage = err.message || errorMessage;
+          } else {
+            const text = await response.text();
+            console.error('Fetch users non-JSON error:', text.substring(0, 200));
+            errorMessage += ' Backend might be unavailable or returned an error.';
+          }
+          throw new Error(errorMessage);
         }
-      });
-      
-      const contentType = response.headers.get("content-type");
-      if (!response.ok) {
-        let errorMessage = 'Failed to fetch users.';
-        if (contentType && contentType.includes("application/json")) {
-          const err = await response.json();
-          errorMessage = err.message || errorMessage;
-        } else {
-          const text = await response.text();
-          console.error('Fetch users non-JSON error:', text);
-          errorMessage += ' Backend might be unavailable or returned an error.';
+        
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error('Invalid response from server. Expected JSON. If you are on a static host like Netlify, ensure your backend is deployed correctly.');
         }
-        throw new Error(errorMessage);
+        return response.json();
+      } catch (fetchErr: any) {
+        console.error('Admin API fetch error:', fetchErr);
+        throw new Error(`Admin data fetch failed: ${fetchErr.message || 'Unknown error'}. Ensure your backend server is running.`);
       }
-      
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error('Invalid response from server. Expected JSON.');
-      }
-      return response.json();
     },
     getAllTransactions: async (): Promise<Transaction[]> => {
       // Try Supabase directly first
@@ -199,31 +258,40 @@ export const api = {
         })) as Transaction[];
       }
 
+      console.warn('Supabase direct transactions fetch failed, falling back to API:', error.message);
+
       const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch('/api/admin/transactions', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token}`
+      if (!session) throw new Error('Not authenticated');
+
+      try {
+        const response = await fetch('/api/admin/transactions', {
+          headers: {
+            'Authorization': `Bearer ${session?.access_token}`
+          }
+        });
+        
+        const contentType = response.headers.get("content-type");
+        if (!response.ok) {
+          let errorMessage = 'Failed to fetch transactions.';
+          if (contentType && contentType.includes("application/json")) {
+            const err = await response.json();
+            errorMessage = err.message || errorMessage;
+          } else {
+            const text = await response.text();
+            console.error('Fetch transactions non-JSON error:', text.substring(0, 200));
+            errorMessage += ' Backend might be unavailable or returned an error.';
+          }
+          throw new Error(errorMessage);
         }
-      });
-      
-      const contentType = response.headers.get("content-type");
-      if (!response.ok) {
-        let errorMessage = 'Failed to fetch transactions.';
-        if (contentType && contentType.includes("application/json")) {
-          const err = await response.json();
-          errorMessage = err.message || errorMessage;
-        } else {
-          const text = await response.text();
-          console.error('Fetch transactions non-JSON error:', text);
-          errorMessage += ' Backend might be unavailable or returned an error.';
+        
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error('Invalid response from server. Expected JSON. If you are on a static host like Netlify, ensure your backend is deployed correctly.');
         }
-        throw new Error(errorMessage);
+        return response.json();
+      } catch (fetchErr: any) {
+        console.error('Admin API fetch error:', fetchErr);
+        throw new Error(`Admin transactions fetch failed: ${fetchErr.message || 'Unknown error'}. Ensure your backend server is running.`);
       }
-      
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error('Invalid response from server. Expected JSON.');
-      }
-      return response.json();
     },
     getAllLogs: async (): Promise<ActivityLog[]> => {
       // Try Supabase directly first
@@ -244,31 +312,40 @@ export const api = {
         })) as ActivityLog[];
       }
 
+      console.warn('Supabase direct logs fetch failed, falling back to API:', error.message);
+
       const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch('/api/admin/logs', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token}`
+      if (!session) throw new Error('Not authenticated');
+
+      try {
+        const response = await fetch('/api/admin/logs', {
+          headers: {
+            'Authorization': `Bearer ${session?.access_token}`
+          }
+        });
+        
+        const contentType = response.headers.get("content-type");
+        if (!response.ok) {
+          let errorMessage = 'Failed to fetch logs.';
+          if (contentType && contentType.includes("application/json")) {
+            const err = await response.json();
+            errorMessage = err.message || errorMessage;
+          } else {
+            const text = await response.text();
+            console.error('Fetch logs non-JSON error:', text.substring(0, 200));
+            errorMessage += ' Backend might be unavailable or returned an error.';
+          }
+          throw new Error(errorMessage);
         }
-      });
-      
-      const contentType = response.headers.get("content-type");
-      if (!response.ok) {
-        let errorMessage = 'Failed to fetch logs.';
-        if (contentType && contentType.includes("application/json")) {
-          const err = await response.json();
-          errorMessage = err.message || errorMessage;
-        } else {
-          const text = await response.text();
-          console.error('Fetch logs non-JSON error:', text);
-          errorMessage += ' Backend might be unavailable or returned an error.';
+        
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error('Invalid response from server. Expected JSON. If you are on a static host like Netlify, ensure your backend is deployed correctly.');
         }
-        throw new Error(errorMessage);
+        return response.json();
+      } catch (fetchErr: any) {
+        console.error('Admin API fetch error:', fetchErr);
+        throw new Error(`Admin logs fetch failed: ${fetchErr.message || 'Unknown error'}. Ensure your backend server is running.`);
       }
-      
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error('Invalid response from server. Expected JSON.');
-      }
-      return response.json();
     },
     deleteUser: async (id: string) => {
       const { error } = await supabase

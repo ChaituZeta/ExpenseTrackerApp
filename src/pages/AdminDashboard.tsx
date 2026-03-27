@@ -45,21 +45,45 @@ export default function AdminDashboard() {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       console.log('Fetching admin data...');
-      const [usersData, transData, logsData, catsData] = await Promise.all([
+      const results = await Promise.allSettled([
         api.admin.getAllUsers(),
         api.admin.getAllTransactions(),
         api.admin.getAllLogs(),
         api.categories.getAll()
       ]);
-      setUsers(usersData);
-      setTransactions(transData);
-      setLogs(logsData);
-      setCategories(catsData);
+
+      const [usersRes, transRes, logsRes, catsRes] = results;
+
+      if (usersRes.status === 'fulfilled') setUsers(usersRes.value);
+      else console.error('Error fetching users:', usersRes.reason);
+
+      if (transRes.status === 'fulfilled') setTransactions(transRes.value);
+      else console.error('Error fetching transactions:', transRes.reason);
+
+      if (logsRes.status === 'fulfilled') setLogs(logsRes.value);
+      else console.error('Error fetching logs:', logsRes.reason);
+
+      if (catsRes.status === 'fulfilled') setCategories(catsRes.value);
+      else console.error('Error fetching categories:', catsRes.reason);
+
+      // If all failed, show a big error
+      if (usersRes.status === 'rejected' && transRes.status === 'rejected' && logsRes.status === 'rejected') {
+        const firstError = (usersRes as any).reason?.message || 'Unknown error';
+        let msg = firstError;
+        if (msg.includes('Expected JSON')) {
+          msg = 'Invalid response from server. This usually means your backend server is not running or is not reachable. If you are on Netlify, ensure you have set up Supabase RLS policies to allow admin access, as the backend server is not available there.';
+        }
+        setError(`Critical error fetching admin data: ${msg}`);
+      } else if (usersRes.status === 'rejected' || transRes.status === 'rejected' || logsRes.status === 'rejected') {
+        // Partial failure
+        setError('Some data could not be loaded. Please check the console for details.');
+      }
     } catch (err: any) {
-      console.error('Error fetching admin data:', err);
-      setError(`Error fetching admin data: ${err.message || 'Unknown error'}`);
+      console.error('Unexpected error in fetchData:', err);
+      setError(`Unexpected error: ${err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
