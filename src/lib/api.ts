@@ -1,6 +1,21 @@
 import { supabase } from './supabase';
 import { User, Category, Transaction, Budget, Summary, ActivityLog } from '../types';
 
+const getAuthSession = async () => {
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (session) return session;
+  
+  // Fallback to getUser which is more robust but slower
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (user) {
+    const { data: { session: retrySession } } = await supabase.auth.getSession();
+    if (retrySession) return retrySession;
+  }
+  
+  console.warn('Auth session check failed:', sessionError || userError);
+  throw new Error('Not authenticated');
+};
+
 export const api = {
   auth: {
     register: async (data: any) => {
@@ -77,9 +92,13 @@ export const api = {
           if (error.message.includes('Refresh Token Not Found') || error.message.includes('refresh_token_not_found')) {
             await supabase.auth.signOut();
           }
+          console.warn('api.auth.me: getUser error:', error.message);
           return { user: null };
         }
-        if (!user) return { user: null };
+        if (!user) {
+          console.log('api.auth.me: No user found');
+          return { user: null };
+        }
         
         return {
           user: {
@@ -100,6 +119,7 @@ export const api = {
 
     updateProfile: async (data: Partial<User>) => {
       try {
+        const session = await getAuthSession();
         const { data: result, error } = await supabase.auth.updateUser({
           data: {
             name: data.name,
@@ -194,13 +214,12 @@ export const api = {
       console.warn('Supabase direct profiles fetch failed, falling back to API:', error.message);
 
       // Fallback to API if Supabase direct fails (though RLS should handle it)
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
+      const session = await getAuthSession();
 
       try {
         const response = await fetch('/api/admin/users', {
           headers: {
-            'Authorization': `Bearer ${session?.access_token}`
+            'Authorization': `Bearer ${session.access_token}`
           }
         });
         
@@ -260,13 +279,12 @@ export const api = {
 
       console.warn('Supabase direct transactions fetch failed, falling back to API:', error.message);
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
+      const session = await getAuthSession();
 
       try {
         const response = await fetch('/api/admin/transactions', {
           headers: {
-            'Authorization': `Bearer ${session?.access_token}`
+            'Authorization': `Bearer ${session.access_token}`
           }
         });
         
@@ -314,13 +332,12 @@ export const api = {
 
       console.warn('Supabase direct logs fetch failed, falling back to API:', error.message);
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
+      const session = await getAuthSession();
 
       try {
         const response = await fetch('/api/admin/logs', {
           headers: {
-            'Authorization': `Bearer ${session?.access_token}`
+            'Authorization': `Bearer ${session.access_token}`
           }
         });
         
@@ -372,12 +389,12 @@ export const api = {
       await api.logs.create('Admin Action', `Updated user ID ${id} role to ${role}`);
     },
     createUser: async (userData: any) => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getAuthSession();
       const response = await fetch('/api/admin/create-user', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify(userData),
       });
@@ -391,12 +408,12 @@ export const api = {
       return response.json();
     },
     syncProfiles: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getAuthSession();
       console.log('Syncing profiles, session exists:', !!session);
       const response = await fetch('/api/admin/sync-profiles', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session?.access_token}`
+          'Authorization': `Bearer ${session.access_token}`
         }
       });
       
@@ -426,15 +443,20 @@ export const api = {
 
   logs: {
     create: async (action: string, details: string) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      try {
+        const session = await getAuthSession();
+        const user = session.user;
 
-      await supabase.from('activity_logs').insert([{
-        user_id: user.id,
-        user_name: user.user_metadata.name || user.email,
-        action,
-        details,
-      }]);
+        await supabase.from('activity_logs').insert([{
+          user_id: user.id,
+          user_name: user.user_metadata.name || user.email,
+          action,
+          details,
+        }]);
+      } catch (e) {
+        // Silent fail for logs if not authenticated, to avoid breaking main flow
+        console.warn('Silent log failure:', e);
+      }
     }
   },
 
@@ -448,10 +470,11 @@ export const api = {
       return data as Category[];
     },
     create: async (data: Partial<Category>) => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const session = await getAuthSession();
+      const user = session.user;
       const { data: result, error } = await supabase
         .from('categories')
-        .insert([{ ...data, user_id: user?.id }])
+        .insert([{ ...data, user_id: user.id }])
         .select()
         .single();
       if (error) throw error;
@@ -510,10 +533,11 @@ export const api = {
       })) as Transaction[];
     },
     create: async (data: Partial<Transaction>) => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const session = await getAuthSession();
+      const user = session.user;
       const { data: result, error } = await supabase
         .from('transactions')
-        .insert([{ ...data, user_id: user?.id }])
+        .insert([{ ...data, user_id: user.id }])
         .select()
         .single();
       if (error) {
@@ -562,8 +586,8 @@ export const api = {
       })) as Budget[];
     },
     upsert: async (data: Partial<Budget>) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const session = await getAuthSession();
+      const user = session.user;
       
       const payload: any = { ...data, user_id: user.id };
       
@@ -607,8 +631,8 @@ export const api = {
 
   summary: {
     get: async (userId?: string, startDate?: string, endDate?: string): Promise<Summary> => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const session = await getAuthSession();
+      const user = session.user;
 
       const targetUserId = userId || user.id;
 
