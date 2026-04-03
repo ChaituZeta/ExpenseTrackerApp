@@ -147,6 +147,7 @@ export const api = {
 
     forgotPassword: async (identifier: string) => {
       // identifier can be email or phone
+      console.log('Calling forgotPassword API for:', identifier);
       const response = await fetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -154,6 +155,8 @@ export const api = {
       });
       
       const contentType = response.headers.get("content-type");
+      console.log('Forgot password response status:', response.status, 'Content-Type:', contentType);
+
       if (!response.ok) {
         let errorMessage = 'Failed to send OTP';
         if (contentType && contentType.includes("application/json")) {
@@ -161,8 +164,8 @@ export const api = {
           errorMessage = err.message || errorMessage;
         } else {
           const text = await response.text();
-          console.error('Forgot password non-JSON error:', text.substring(0, 200));
-          errorMessage += ' Backend might be unavailable.';
+          console.error('Forgot password non-JSON error (likely HTML fallback):', text.substring(0, 500));
+          errorMessage += ' - The API route was not found or returned HTML. Please check vercel.json and API deployment.';
         }
         throw new Error(errorMessage);
       }

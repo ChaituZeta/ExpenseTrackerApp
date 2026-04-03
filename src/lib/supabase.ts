@@ -14,8 +14,14 @@ const getEnv = (key: string): string => {
 const supabaseUrl = getEnv('VITE_SUPABASE_URL');
 const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY');
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase URL or Anon Key is missing. Please check your environment variables.');
+if (!supabaseUrl || !supabaseAnonKey || supabaseUrl === 'https://placeholder.supabase.co') {
+  console.error('CRITICAL: Supabase environment variables are missing or invalid!', {
+    url: supabaseUrl ? 'Present' : 'Missing',
+    key: supabaseAnonKey ? 'Present' : 'Missing',
+    tip: 'Ensure your Vercel environment variables are prefixed with VITE_ (e.g., VITE_SUPABASE_URL instead of SUPABASE_URL).'
+  });
+} else {
+  console.log('Supabase client initialized with URL:', supabaseUrl);
 }
 
 export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder');
