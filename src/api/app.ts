@@ -5,6 +5,15 @@ import nodemailer from "nodemailer";
 
 const app = new Hono().basePath('/api');
 
+// Global Error Handler
+app.onError((err, c) => {
+  console.error('Hono Global Error:', err);
+  return c.json({ 
+    error: err.message || 'Internal Server Error',
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  }, 500);
+});
+
 // Middleware
 app.use('*', cors());
 
@@ -14,14 +23,19 @@ const getSupabase = (c: any) => {
   const supabaseServiceKey = c.env?.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   const supabaseAnonKey = c.env?.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
-  if (!supabaseUrl) console.error('MISSING: VITE_SUPABASE_URL');
-  if (!supabaseServiceKey && !supabaseAnonKey) console.error('MISSING: Supabase Keys');
+  if (!supabaseUrl) console.error('DEBUG: VITE_SUPABASE_URL is missing');
+  if (!supabaseServiceKey) console.error('DEBUG: SUPABASE_SERVICE_ROLE_KEY is missing');
+  if (!supabaseAnonKey) console.error('DEBUG: VITE_SUPABASE_ANON_KEY is missing');
 
   const finalKey = (supabaseServiceKey && supabaseServiceKey !== "your-service-role-key") 
     ? supabaseServiceKey 
     : supabaseAnonKey;
 
-  return createClient(supabaseUrl || "", finalKey || "");
+  if (!supabaseUrl || !finalKey) {
+    throw new Error("Supabase configuration is incomplete. Check environment variables.");
+  }
+
+  return createClient(supabaseUrl, finalKey);
 };
 
 const getTransporter = (c: any) => {
