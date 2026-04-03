@@ -19,64 +19,64 @@ const getAuthSession = async () => {
 export const api = {
   auth: {
     register: async (data: any) => {
-      const { data: authData, error } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          data: {
-            name: data.name,
-            phone: data.phone,
-            currency: '₹',
-          },
-        },
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
       });
-      if (error) throw error;
-
-      // Manually insert into profiles table to ensure server-side lookups work
-      // This is helpful if there's no database trigger set up
-      if (authData.user) {
-        try {
-          await supabase.from('profiles').insert([{
-            id: authData.user.id,
-            email: data.email,
-            name: data.name,
-            phone: data.phone,
-            role: data.email === 'cbogineni@gmail.com' ? 'admin' : 'user',
-            currency: '₹'
-          }]);
-        } catch (profileErr) {
-          console.error('Failed to create profile record:', profileErr);
-          // Don't throw here, as auth was successful
+      
+      const contentType = response.headers.get("content-type");
+      if (!response.ok) {
+        let errorMessage = 'Registration failed';
+        if (contentType && contentType.includes("application/json")) {
+          const err = await response.json();
+          errorMessage = err.error || err.message || errorMessage;
         }
+        throw new Error(errorMessage);
+      }
+      
+      const res = await response.json();
+      
+      // If session is returned, set it
+      if (res.session) {
+        await supabase.auth.setSession(res.session);
       }
 
-      // Log activity
+      // Log activity (now via API)
       await api.logs.create('Register', `User ${data.name} registered`);
 
-      return authData;
+      return res;
     },
     
     login: async (data: any) => {
-      const { data: authData, error } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
       });
-      if (error) throw error;
       
-      // Log activity
-      await api.logs.create('Login', `User ${authData.user.email} logged in`);
-
-      return {
-        user: {
-          id: authData.user.id,
-          email: authData.user.email,
-          name: authData.user.user_metadata.name,
-          phone: authData.user.user_metadata.phone,
-          avatar_url: authData.user.user_metadata.avatar_url,
-          currency: authData.user.user_metadata.currency || '₹',
-          role: authData.user.email === 'cbogineni@gmail.com' ? 'admin' : 'user',
+      const contentType = response.headers.get("content-type");
+      if (!response.ok) {
+        let errorMessage = 'Login failed';
+        if (contentType && contentType.includes("application/json")) {
+          const err = await response.json();
+          errorMessage = err.error || err.message || errorMessage;
         }
-      };
+        throw new Error(errorMessage);
+      }
+      
+      const res = await response.json();
+      
+      // CRITICAL: Set the session in the client-side Supabase instance
+      if (res.session) {
+        const { error } = await supabase.auth.setSession(res.session);
+        if (error) console.error('Failed to set session after server-side login:', error);
+      }
+      
+      // Log activity (now via API)
+      await api.logs.create('Login', `User ${res.user.email} logged in`);
+
+      return res;
     },
     
     logout: async () => {
@@ -147,7 +147,6 @@ export const api = {
 
     forgotPassword: async (identifier: string) => {
       // identifier can be email or phone
-      console.log('Calling forgotPassword API for:', identifier);
       const response = await fetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -155,8 +154,6 @@ export const api = {
       });
       
       const contentType = response.headers.get("content-type");
-      console.log('Forgot password response status:', response.status, 'Content-Type:', contentType);
-
       if (!response.ok) {
         let errorMessage = 'Failed to send OTP';
         if (contentType && contentType.includes("application/json")) {
@@ -164,8 +161,8 @@ export const api = {
           errorMessage = err.message || errorMessage;
         } else {
           const text = await response.text();
-          console.error('Forgot password non-JSON error (likely HTML fallback):', text.substring(0, 500));
-          errorMessage += ' - The API route was not found or returned HTML. Please check vercel.json and API deployment.';
+          console.error('Forgot password non-JSON error:', text.substring(0, 200));
+          errorMessage += ' Backend might be unavailable.';
         }
         throw new Error(errorMessage);
       }
@@ -447,17 +444,19 @@ export const api = {
   logs: {
     create: async (action: string, details: string) => {
       try {
-        const session = await getAuthSession();
-        const user = session.user;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
 
-        await supabase.from('activity_logs').insert([{
-          user_id: user.id,
-          user_name: user.user_metadata.name || user.email,
-          action,
-          details,
-        }]);
+        await fetch('/api/logs/create', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ action, details })
+        });
       } catch (e) {
-        // Silent fail for logs if not authenticated, to avoid breaking main flow
+        // Silent fail for logs to avoid breaking main flow
         console.warn('Silent log failure:', e);
       }
     }

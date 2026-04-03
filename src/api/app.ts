@@ -92,6 +92,102 @@ const isAdmin = async (c: any) => {
 // Routes
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
+app.post('/auth/login', async (c) => {
+  try {
+    const { email, password } = await c.req.json();
+    const supabase = getSupabase(c);
+    
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return c.json({ error: error.message }, 401);
+    
+    // Get profile for role and other metadata
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', data.user.id)
+      .maybeSingle();
+
+    return c.json({
+      session: data.session,
+      user: {
+        id: data.user.id,
+        email: data.user.email,
+        name: profile?.name || data.user.user_metadata.name,
+        phone: profile?.phone || data.user.user_metadata.phone,
+        avatar_url: profile?.avatar_url || data.user.user_metadata.avatar_url,
+        currency: profile?.currency || data.user.user_metadata.currency || '₹',
+        role: profile?.role || (data.user.email === 'cbogineni@gmail.com' ? 'admin' : 'user'),
+      }
+    });
+  } catch (err: any) {
+    return c.json({ error: err.message || "Internal server error during login" }, 500);
+  }
+});
+
+app.post('/auth/register', async (c) => {
+  try {
+    const { email, password, name, phone } = await c.req.json();
+    const supabase = getSupabase(c);
+    
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name, phone, currency: '₹' }
+      }
+    });
+    
+    if (error) return c.json({ error: error.message }, 400);
+
+    if (data.user) {
+      await supabase.from('profiles').upsert({
+        id: data.user.id,
+        email,
+        name,
+        phone,
+        role: email === 'cbogineni@gmail.com' ? 'admin' : 'user',
+        currency: '₹'
+      });
+    }
+
+    return c.json({ 
+      user: data.user, 
+      session: data.session,
+      message: "Registration successful" 
+    });
+  } catch (err: any) {
+    return c.json({ error: err.message || "Internal server error during registration" }, 500);
+  }
+});
+
+app.post('/logs/create', async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json({ error: "Unauthorized" }, 401);
+    
+    const token = authHeader.split(' ')[1];
+    const { action, details } = await c.req.json();
+    const supabase = getSupabase(c);
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return c.json({ error: "Invalid session" }, 401);
+
+    const { error } = await supabase.from('activity_logs').insert([{
+      user_id: user.id,
+      user_name: user.user_metadata.name || user.email,
+      action,
+      details,
+    }]);
+
+    if (error) throw error;
+    return c.json({ success: true });
+  } catch (err: any) {
+    // We don't want to break the app if logging fails
+    console.error("Logging error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 app.get('/admin/users', async (c) => {
   const auth = await isAdmin(c);
   if (auth.error) return c.json({ error: auth.error }, auth.status as any);
