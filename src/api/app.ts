@@ -14,6 +14,9 @@ const getSupabase = (c: any) => {
   const supabaseServiceKey = c.env?.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   const supabaseAnonKey = c.env?.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
+  if (!supabaseUrl) console.error('MISSING: VITE_SUPABASE_URL');
+  if (!supabaseServiceKey && !supabaseAnonKey) console.error('MISSING: Supabase Keys');
+
   const finalKey = (supabaseServiceKey && supabaseServiceKey !== "your-service-role-key") 
     ? supabaseServiceKey 
     : supabaseAnonKey;
@@ -95,24 +98,39 @@ app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOStri
 app.post('/auth/login', async (c) => {
   try {
     const { email, password } = await c.req.json();
+    console.log(`Login attempt: ${email}`);
     const supabase = getSupabase(c);
     
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return c.json({ error: error.message }, 401);
+    if (error) {
+      console.error(`Login error for ${email}:`, error.message);
+      return c.json({ error: error.message }, 401);
+    }
     
+    if (!data.user) {
+      console.error(`Login failed: No user returned for ${email}`);
+      return c.json({ error: "User not found" }, 404);
+    }
+
     // Get profile for role and other metadata
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', data.user.id)
       .maybeSingle();
+
+    if (profileError) {
+      console.warn(`Profile fetch error for ${email}:`, profileError.message);
+    }
+
+    console.log(`Login successful: ${email} (${data.user.id})`);
 
     return c.json({
       session: data.session,
       user: {
         id: data.user.id,
         email: data.user.email,
-        name: profile?.name || data.user.user_metadata.name,
+        name: profile?.name || data.user.user_metadata.name || 'User',
         phone: profile?.phone || data.user.user_metadata.phone,
         avatar_url: profile?.avatar_url || data.user.user_metadata.avatar_url,
         currency: profile?.currency || data.user.user_metadata.currency || '₹',
@@ -120,6 +138,7 @@ app.post('/auth/login', async (c) => {
       }
     });
   } catch (err: any) {
+    console.error('Critical login error:', err);
     return c.json({ error: err.message || "Internal server error during login" }, 500);
   }
 });

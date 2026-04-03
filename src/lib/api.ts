@@ -57,10 +57,14 @@ export const api = {
       
       const contentType = response.headers.get("content-type");
       if (!response.ok) {
-        let errorMessage = 'Login failed';
+        let errorMessage = `Login failed (${response.status})`;
         if (contentType && contentType.includes("application/json")) {
           const err = await response.json();
           errorMessage = err.error || err.message || errorMessage;
+        } else {
+          const text = await response.text();
+          console.error('Login error (non-JSON):', text.substring(0, 200));
+          errorMessage = `Server Error: ${response.status} ${response.statusText}`;
         }
         throw new Error(errorMessage);
       }
