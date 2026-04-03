@@ -4,100 +4,16 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
-import { createClient } from "@supabase/supabase-js";
+import { 
+  supabase, 
+  transporter, 
+  getEmailTemplate, 
+  isAdmin, 
+  BRAND_PRIMARY, 
+  BRAND_ACCENT 
+} from "./api/lib/shared.js";
 
-dotenv.config();
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 3000;
-
-// Supabase client for server-side checks
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
-
-// Use service role key if available and not a placeholder, otherwise fallback to anon key
-const finalKey = (supabaseServiceKey && supabaseServiceKey !== "your-service-role-key") 
-  ? supabaseServiceKey 
-  : supabaseAnonKey;
-
-const supabase = createClient(
-  supabaseUrl || "",
-  finalKey || ""
-);
-
-console.log("Supabase initialized. Using Service Role Key:", !!(supabaseServiceKey && supabaseServiceKey !== "your-service-role-key"));
-if (supabaseServiceKey) {
-  console.log("SUPABASE_SERVICE_ROLE_KEY length:", supabaseServiceKey.length);
-  console.log("SUPABASE_SERVICE_ROLE_KEY starts with:", supabaseServiceKey.substring(0, 10));
-} else {
-  console.warn("SUPABASE_SERVICE_ROLE_KEY is undefined or empty.");
-}
-if (!supabaseServiceKey || supabaseServiceKey === "your-service-role-key") {
-  console.warn("WARNING: SUPABASE_SERVICE_ROLE_KEY is missing or using placeholder. Admin features may fail due to RLS.");
-}
-
-// Startup check for Supabase tables
-async function checkSupabase() {
-  console.log("Checking Supabase connection and tables...");
-  const tables = ["profiles", "transactions", "categories", "activity_logs", "budgets"];
-  for (const table of tables) {
-    try {
-      const { error } = await supabase.from(table).select("*", { count: "exact", head: true });
-      if (error) {
-        console.error(`Table check failed for '${table}':`, error.message);
-      } else {
-        console.log(`Table check passed for '${table}'`);
-      }
-    } catch (err: any) {
-      console.error(`Exception checking table '${table}':`, err.message);
-    }
-  }
-}
-checkSupabase();
-
-// Email transporter
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp.gmail.com",
-  port: parseInt(process.env.SMTP_PORT || "587"),
-  secure: process.env.SMTP_PORT === "465",
-  auth: {
-    user: process.env.SMTP_USER || "cbogineni@gmail.com",
-    pass: process.env.SMTP_PASS || "zmel ckmu jfqn pqwc",
-  },
-});
-
-// Verify transporter connection
-transporter.verify((error, success) => {
-  if (error) {
-    console.error("SMTP Connection Error:", error);
-  } else {
-    console.log("SMTP Server is ready to take our messages");
-  }
-});
-
-// In-memory OTP store (use a DB in production)
-const otpStore = new Map<string, { otp: string; expires: number; email: string }>();
-
-const BRAND_PRIMARY = "#3E3C7A";
-const BRAND_ACCENT = "#F3A61C";
-
-const getEmailTemplate = (title: string, content: string) => `
-  <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 24px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-    <div style="background-color: ${BRAND_PRIMARY}; padding: 40px; text-align: center;">
-      <h1 style="color: white; margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -1px;">FinTrack</h1>
-    </div>
-    <div style="padding: 40px; background-color: white;">
-      <h2 style="color: #111827; margin-top: 0; font-size: 24px; font-weight: 700;">${title}</h2>
-      <div style="color: #4b5563; line-height: 1.6; font-size: 16px;">
-        ${content}
-      </div>
-      <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f3f4f6; text-align: center; color: #9ca3af; font-size: 12px;">
-        &copy; 2026 FinTrack. All rights reserved.
-      </div>
-    </div>
-  </div>
-`;
 
 async function startServer() {
   const app = express();
@@ -120,57 +36,13 @@ async function startServer() {
   });
 
   // Admin Middleware
-  const isAdmin = async (req: any, res: any, next: any) => {
-    console.log(`Admin middleware check for: ${req.method} ${req.url}`);
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      console.warn("Admin middleware: No auth header");
-      return res.status(401).json({ message: "Unauthorized" });
+  const isAdminMiddleware = async (req: any, res: any, next: any) => {
+    const auth = await isAdmin(req);
+    if (auth.error) {
+      return res.status(auth.status || 401).json({ message: auth.error });
     }
-    
-    try {
-      // Extract token (assuming Bearer token)
-      const token = authHeader.split(' ')[1];
-      if (!token) return res.status(401).json({ message: "No token provided" });
-
-      // Verify user with Supabase
-      const { data: { user }, error } = await supabase.auth.getUser(token);
-      if (error || !user) {
-        console.error("Admin middleware auth error:", error?.message);
-        return res.status(401).json({ message: "Invalid session" });
-      }
-
-      // Check role in profiles table
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      const isDefaultAdmin = user.email === 'cbogineni@gmail.com';
-
-      if (profile?.role === 'admin' || isDefaultAdmin) {
-        // If default admin but no profile or wrong role, ensure it's correct
-        if (isDefaultAdmin && profile?.role !== 'admin') {
-          console.log("Ensuring default admin profile exists and has admin role...");
-          await supabase.from('profiles').upsert({
-            id: user.id,
-            email: user.email,
-            name: user.user_metadata?.name || 'Admin',
-            role: 'admin'
-          });
-        }
-        
-        req.user = user;
-        next();
-      } else {
-        console.warn(`Unauthorized admin access attempt by ${user.email}. Role: ${profile?.role}`);
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
-      }
-    } catch (err: any) {
-      console.error("Admin middleware exception:", err.message);
-      res.status(500).json({ message: "Internal server error during authorization" });
-    }
+    req.user = auth.user;
+    next();
   };
 
   // Health check endpoint
@@ -183,7 +55,7 @@ async function startServer() {
   });
 
   // Admin API Routes
-  app.get("/api/admin/users", isAdmin, async (req, res) => {
+  app.get("/api/admin/users", isAdminMiddleware, async (req, res) => {
     console.log("GET /api/admin/users hit");
     try {
       const { data, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
@@ -198,7 +70,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/transactions", isAdmin, async (req, res) => {
+  app.get("/api/admin/transactions", isAdminMiddleware, async (req, res) => {
     console.log("GET /api/admin/transactions hit");
     try {
       const { data, error } = await supabase
@@ -230,7 +102,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/logs", isAdmin, async (req, res) => {
+  app.get("/api/admin/logs", isAdminMiddleware, async (req, res) => {
     console.log("GET /api/admin/logs hit");
     try {
       const { data, error } = await supabase.from("activity_logs").select("*").order("created_at", { ascending: false });
@@ -245,7 +117,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/create-user", isAdmin, async (req, res) => {
+  app.post("/api/admin/create-user", isAdminMiddleware, async (req, res) => {
     console.log("POST /api/admin/create-user hit", req.body.email);
     const { email, password, name, phone, role, sendEmail } = req.body;
     
@@ -315,7 +187,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/sync-profiles", isAdmin, async (req, res) => {
+  app.post("/api/admin/sync-profiles", isAdminMiddleware, async (req, res) => {
     console.log("POST /api/admin/sync-profiles hit");
     try {
       if (!supabase.auth.admin) {
@@ -422,7 +294,7 @@ async function startServer() {
       }
 
       if (error) {
-        console.error("Supabase profile lookup error details:", error.message, error.details, error.hint, error.code);
+        console.error("Supabase profile lookup error details:", error.message);
         throw error;
       }
 
@@ -432,9 +304,22 @@ async function startServer() {
       }
 
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      const expires = Date.now() + 10 * 60 * 1000; // 10 minutes
+      const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
 
-      otpStore.set(identifier, { otp, expires, email: profiles.email });
+      // Store OTP in Supabase 'otps' table
+      const { error: otpError } = await supabase
+        .from('otps')
+        .upsert({ 
+          identifier, 
+          otp, 
+          expires, 
+          email: profiles.email 
+        });
+
+      if (otpError) {
+        console.error("Failed to store OTP in Supabase:", otpError.message);
+        return res.status(500).json({ message: "Failed to process request. Database table 'otps' might be missing." });
+      }
 
       const html = getEmailTemplate(
         "Password Reset OTP",
@@ -463,20 +348,26 @@ async function startServer() {
 
   app.post("/api/auth/reset-password", async (req, res) => {
     const { identifier, otp, newPassword } = req.body;
-    const stored = otpStore.get(identifier);
-
-    if (!stored || stored.otp !== otp || Date.now() > stored.expires) {
-      return res.status(400).json({ message: "Invalid or expired OTP" });
-    }
 
     try {
+      // Retrieve OTP from Supabase 'otps' table
+      const { data: stored, error: otpError } = await supabase
+        .from('otps')
+        .select('*')
+        .eq('identifier', identifier)
+        .maybeSingle();
+
+      if (otpError || !stored || stored.otp !== otp || new Date(stored.expires).getTime() < Date.now()) {
+        return res.status(400).json({ message: "Invalid or expired OTP" });
+      }
+
       if (!supabase.auth.admin) {
         return res.status(500).json({ 
           message: "Supabase Admin SDK not initialized. Ensure SUPABASE_SERVICE_ROLE_KEY is set in Secrets." 
         });
       }
 
-      // Update password in Supabase Auth (requires admin/service role or user session)
+      // Update password in Supabase Auth
       const { data: userProfile, error: profileError } = await supabase
         .from('profiles')
         .select('id')
@@ -498,7 +389,9 @@ async function startServer() {
         throw error;
       }
 
-      otpStore.delete(identifier);
+      // Delete OTP after successful reset
+      await supabase.from('otps').delete().eq('identifier', identifier);
+
       res.json({ success: true, message: "Password reset successful" });
     } catch (error) {
       console.error("Reset password error:", error);
