@@ -49,38 +49,52 @@ export const api = {
     },
     
     login: async (data: any) => {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      
-      const contentType = response.headers.get("content-type");
-      if (!response.ok) {
-        let errorMessage = `Login failed (${response.status})`;
-        if (contentType && contentType.includes("application/json")) {
-          const err = await response.json();
-          errorMessage = err.error || err.message || errorMessage;
-        } else {
-          const text = await response.text();
-          console.error('Login error (non-JSON):', text.substring(0, 200));
-          errorMessage = `Server Error: ${response.status} ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
-      }
-      
-      const res = await response.json();
-      
-      // CRITICAL: Set the session in the client-side Supabase instance
-      if (res.session) {
-        const { error } = await supabase.auth.setSession(res.session);
-        if (error) console.error('Failed to set session after server-side login:', error);
-      }
-      
-      // Log activity (now via API)
-      await api.logs.create('Login', `User ${res.user.email} logged in`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
 
-      return res;
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        const contentType = response.headers.get("content-type");
+        if (!response.ok) {
+          let errorMessage = `Login failed (${response.status})`;
+          if (contentType && contentType.includes("application/json")) {
+            const err = await response.json();
+            errorMessage = err.error || err.message || errorMessage;
+          } else {
+            const text = await response.text();
+            console.error('Login error (non-JSON):', text.substring(0, 200));
+            errorMessage = `Server Error: ${response.status} ${response.statusText}`;
+          }
+          throw new Error(errorMessage);
+        }
+        
+        const res = await response.json();
+        
+        // CRITICAL: Set the session in the client-side Supabase instance
+        if (res.session) {
+          const { error } = await supabase.auth.setSession(res.session);
+          if (error) console.error('Failed to set session after server-side login:', error);
+        }
+        
+        // Log activity (now via API) - don't await this to speed up login
+        api.logs.create('Login', `User ${res.user.email} logged in`).catch(e => console.warn('Login log failed:', e));
+
+        return res;
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+          throw new Error('Login request timed out. Please check your internet connection or try again later.');
+        }
+        throw err;
+      }
     },
     
     logout: async () => {

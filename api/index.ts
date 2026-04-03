@@ -111,34 +111,55 @@ const isAdmin = async (c: any) => {
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 app.post('/auth/login', async (c) => {
+  const startTime = Date.now();
+  let email = 'unknown';
   try {
-    const { email, password } = await c.req.json();
-    console.log(`Login attempt: ${email}`);
-    const supabase = getSupabase(c);
+    const body = await c.req.json();
+    email = body.email;
+    const password = body.password;
     
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    console.log(`[${startTime}] Login attempt started for: ${email}`);
+    
+    const supabase = getSupabase(c);
+    console.log(`[${Date.now()}] Supabase client initialized for ${email}`);
+    
+    const authStart = Date.now();
+    // Add a timeout to the Supabase auth call
+    const authPromise = supabase.auth.signInWithPassword({ email, password });
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("Supabase auth request timed out")), 10000)
+    );
+    
+    const { data, error } = await Promise.race([authPromise, timeoutPromise]) as any;
+    const authEnd = Date.now();
+    console.log(`[${authEnd}] Supabase auth call took ${authEnd - authStart}ms for ${email}`);
+    
     if (error) {
-      console.error(`Login error for ${email}:`, error.message);
+      console.error(`[${Date.now()}] Login error for ${email}:`, error.message);
       return c.json({ error: error.message }, 401);
     }
     
     if (!data.user) {
-      console.error(`Login failed: No user returned for ${email}`);
+      console.error(`[${Date.now()}] Login failed: No user returned for ${email}`);
       return c.json({ error: "User not found" }, 404);
     }
 
     // Get profile for role and other metadata
+    const profileStart = Date.now();
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', data.user.id)
       .maybeSingle();
+    const profileEnd = Date.now();
+    console.log(`[${profileEnd}] Profile fetch took ${profileEnd - profileStart}ms for ${email}`);
 
     if (profileError) {
-      console.warn(`Profile fetch error for ${email}:`, profileError.message);
+      console.warn(`[${Date.now()}] Profile fetch error for ${email}:`, profileError.message);
     }
 
-    console.log(`Login successful: ${email} (${data.user.id})`);
+    const totalTime = Date.now() - startTime;
+    console.log(`[${Date.now()}] Login successful for ${email} in ${totalTime}ms`);
 
     return c.json({
       session: data.session,
@@ -153,7 +174,8 @@ app.post('/auth/login', async (c) => {
       }
     });
   } catch (err: any) {
-    console.error('Critical login error:', err);
+    const totalTime = Date.now() - startTime;
+    console.error(`[${Date.now()}] Critical login error for ${email} after ${totalTime}ms:`, err);
     return c.json({ error: err.message || "Internal server error during login" }, 500);
   }
 });
