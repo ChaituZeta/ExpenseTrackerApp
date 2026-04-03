@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "expensetracker",
   "compatibility_date": "2026-04-03",
-  "main": "server.ts",
+  "main": "worker.ts",
   "assets": {
     "directory": "dist",
     "binding": "ASSETS",
