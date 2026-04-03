@@ -1,4 +1,4 @@
-import app from './src/api/app.ts';
+import app from './api/app.ts';
 
 export default {
   async fetch(request: Request, env: any, ctx: any) {
