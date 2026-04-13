@@ -7,11 +7,15 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-console.log('Starting FinTrack Application...');
+console.log('Starting FinTrack Application via server.js...');
 
-const child = spawn('npx', ['tsx', 'server.ts'], {
+// Use the local tsx binary from node_modules for better compatibility
+const tsxPath = path.join(__dirname, 'node_modules', '.bin', 'tsx');
+
+const child = spawn(tsxPath, ['server.ts'], {
   stdio: 'inherit',
   shell: true,
   env: {
