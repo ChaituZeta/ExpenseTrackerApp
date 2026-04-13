@@ -5,10 +5,22 @@ import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import app from './api/app.ts';
 
+import fs from "fs";
+
 dotenv.config();
 
-console.log('--- SERVER.TS HEARTBEAT ---');
-console.log('Starting server initialization...');
+// File-based logger for Hostinger debugging
+const logFile = path.join(process.cwd(), "startup_debug.txt");
+const log = (msg: string) => {
+  const entry = `[${new Date().toISOString()}] ${msg}\n`;
+  console.log(msg);
+  fs.appendFileSync(logFile, entry);
+};
+
+log('--- SERVER.TS STARTING ---');
+log(`Node Version: ${process.version}`);
+log(`Port: ${process.env.PORT || 3000}`);
+log(`Directory: ${process.cwd()}`);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,11 +78,11 @@ async function startServer() {
   }
 
     expressApp.listen(PORT, "0.0.0.0", () => {
-      console.log(`SUCCESS: Server is listening on port ${PORT}`);
-      console.log(`URL: http://0.0.0.0:${PORT}`);
+      log(`SUCCESS: Server is listening on port ${PORT}`);
     });
-  } catch (error) {
-    console.error('CRITICAL STARTUP ERROR:', error);
+  } catch (error: any) {
+    log(`CRITICAL STARTUP ERROR: ${error.message}`);
+    if (error.stack) log(error.stack);
     process.exit(1);
   }
 }
