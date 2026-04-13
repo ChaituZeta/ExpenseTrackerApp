@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Category } from '../types';
-import { Plus, Trash2, Tag, Palette, Type, Edit2, X, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { 
+  Plus, Trash2, Tag, Palette, Type, Edit2, X, AlertCircle, CheckCircle2
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 import LoadingSpinner from '../components/LoadingSpinner';
+import { IconRenderer, ICON_OPTIONS } from '../components/IconRenderer';
 
 export default function Categories() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -12,6 +15,7 @@ export default function Categories() {
   const [name, setName] = useState('');
   const [type, setType] = useState<'income' | 'expense' | 'adjustment'>('expense');
   const [color, setColor] = useState('#3b82f6');
+  const [icon, setIcon] = useState('Tag');
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,10 +43,10 @@ export default function Categories() {
     setSuccess(null);
     try {
       if (editingId) {
-        await api.categories.update(editingId, { name, type, color });
+        await api.categories.update(editingId, { name, type, color, icon });
         setSuccess('Category updated successfully');
       } else {
-        await api.categories.create({ name, type, color, icon: 'Tag' });
+        await api.categories.create({ name, type, color, icon });
         setSuccess('Category created successfully');
       }
       resetForm();
@@ -58,6 +62,7 @@ export default function Categories() {
     setName('');
     setType('expense');
     setColor('#3b82f6');
+    setIcon('Tag');
     setEditingId(null);
   };
 
@@ -65,6 +70,7 @@ export default function Categories() {
     setName(category.name);
     setType(category.type);
     setColor(category.color);
+    setIcon(category.icon || 'Tag');
     setEditingId(category.id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -243,6 +249,25 @@ export default function Categories() {
 
             <div className="space-y-2">
               <label className="text-sm font-bold text-zinc-700 flex items-center gap-2">
+                <Tag className="w-4 h-4" /> Icon
+              </label>
+              <div className="grid grid-cols-6 gap-2 max-h-48 overflow-y-auto p-2 border border-zinc-100 rounded-xl bg-zinc-50">
+                {ICON_OPTIONS.map(opt => (
+                  <button
+                    key={opt.name}
+                    type="button"
+                    onClick={() => setIcon(opt.name)}
+                    className={`p-2 rounded-lg flex items-center justify-center transition-all ${icon === opt.name ? 'bg-black text-white shadow-lg scale-110' : 'bg-white text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100'}`}
+                    title={opt.name}
+                  >
+                    <opt.icon className="w-5 h-5" />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-zinc-700 flex items-center gap-2">
                 <Palette className="w-4 h-4" /> Color
               </label>
               <div className="grid grid-cols-5 gap-2">
@@ -286,7 +311,7 @@ export default function Categories() {
                 >
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white" style={{ backgroundColor: c.color }}>
-                      <Tag className="w-6 h-6" />
+                      <IconRenderer name={c.icon} className="w-6 h-6" />
                     </div>
                     <div>
                       <h3 className="font-bold text-zinc-900">{c.name}</h3>

@@ -11,6 +11,7 @@ import { getMonthOptions } from '../lib/dateUtils';
 
 import LoadingSpinner from '../components/LoadingSpinner';
 import UserBadge from '../components/UserBadge';
+import { IconRenderer } from '../components/IconRenderer';
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -181,8 +182,7 @@ export default function Dashboard() {
                 <div key={t.id} className="flex items-center justify-between p-3 hover:bg-zinc-50 rounded-2xl transition-colors">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white" style={{ backgroundColor: t.category_color }}>
-                      {/* Icon placeholder - would need a mapping function */}
-                      <div className="text-xs font-bold uppercase">{t.category_name?.substring(0, 2)}</div>
+                      <IconRenderer name={t.category_icon} className="w-5 h-5" />
                     </div>
                     <div>
                       <p className="font-bold text-zinc-900">{t.description || t.category_name}</p>

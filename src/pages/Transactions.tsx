@@ -2,13 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useSearchParams } from 'react-router-dom';
 import { Transaction, Category } from '../types';
-import { Plus, Search, Filter, Trash2, Calendar, IndianRupee, Tag, FileText, ChevronDown, RefreshCw, Edit2, X, AlertCircle, CheckCircle2, Download, Copy } from 'lucide-react';
+import { Plus, Search, Filter, Trash2, Calendar, IndianRupee, Tag, FileText, ChevronDown, RefreshCw, Edit2, X, AlertCircle, CheckCircle2, Download, Copy, CheckSquare, Square } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { getMonthOptions } from '../lib/dateUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 
 import LoadingSpinner from '../components/LoadingSpinner';
+import { IconRenderer } from '../components/IconRenderer';
 
 interface EditModalProps {
   transaction: Transaction;
@@ -171,6 +172,8 @@ export default function Transactions() {
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'adjustment'>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'yyyy-MM'));
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<(string | number)[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
 
   // Form State
   const [amount, setAmount] = useState('');
@@ -331,9 +334,23 @@ export default function Transactions() {
       const end = new Date(year, month, 0, 23, 59, 59);
       matchesMonth = isWithinInterval(transDate, { start, end });
     }
+
+    const matchesCategory = selectedCategoryIds.length === 0 || selectedCategoryIds.includes(t.category_id);
     
-    return matchesSearch && matchesType && matchesMonth;
+    return matchesSearch && matchesType && matchesMonth && matchesCategory;
   });
+
+  const filteredTotal = filteredTransactions.reduce((acc, t) => {
+    if (t.type === 'expense') return acc - t.amount;
+    if (t.type === 'income' || t.type === 'adjustment') return acc + t.amount;
+    return acc;
+  }, 0);
+
+  const toggleCategory = (id: string | number) => {
+    setSelectedCategoryIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
 
   return (
     <div className="space-y-8">
@@ -524,6 +541,17 @@ export default function Transactions() {
                 {type}
               </button>
             ))}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all text-sm ${
+                showFilters || selectedCategoryIds.length > 0
+                  ? 'bg-zinc-900 text-white'
+                  : 'bg-white text-zinc-500 border border-black/5'
+              }`}
+            >
+              <Filter className="w-4 h-4" />
+              Categories {selectedCategoryIds.length > 0 && `(${selectedCategoryIds.length})`}
+            </button>
           </div>
           
           <div className="flex items-center gap-2 bg-white p-1 rounded-2xl border border-black/5">
@@ -541,6 +569,49 @@ export default function Transactions() {
             <ChevronDown className="w-4 h-4 mr-3 text-zinc-400" />
           </div>
         </div>
+
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="bg-white p-6 rounded-3xl border border-black/5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-zinc-900">Filter by Category</h3>
+                  <button 
+                    onClick={() => setSelectedCategoryIds([])}
+                    className="text-xs font-bold text-brand-primary hover:underline"
+                  >
+                    Clear All
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {categories.filter(c => filterType === 'all' || c.type === filterType).map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => toggleCategory(c.id)}
+                      className={`flex items-center gap-2 p-3 rounded-xl border transition-all text-left ${
+                        selectedCategoryIds.includes(c.id)
+                          ? 'border-black bg-black text-white'
+                          : 'border-black/5 bg-zinc-50 text-zinc-600 hover:border-black/20'
+                      }`}
+                    >
+                      {selectedCategoryIds.includes(c.id) ? (
+                        <CheckSquare className="w-4 h-4 shrink-0" />
+                      ) : (
+                        <Square className="w-4 h-4 shrink-0" />
+                      )}
+                      <span className="text-xs font-bold truncate">{c.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 w-5 h-5" />
@@ -551,6 +622,19 @@ export default function Transactions() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-12 pr-4 py-3 rounded-2xl bg-white border border-black/5 focus:border-black outline-none transition-all"
           />
+        </div>
+      </div>
+
+      {/* Summary for Filtered View */}
+      <div className="bg-zinc-900 text-white p-6 rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <p className="text-zinc-400 text-xs font-bold uppercase tracking-widest mb-1">Filtered Total</p>
+          <h2 className="text-3xl font-bold">
+            {filteredTotal >= 0 ? '+' : '-'}₹{Math.abs(filteredTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </h2>
+        </div>
+        <div className="text-sm text-zinc-400">
+          Showing <span className="text-white font-bold">{filteredTransactions.length}</span> transactions
         </div>
       </div>
 
@@ -582,8 +666,8 @@ export default function Transactions() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-[10px] font-bold uppercase" style={{ backgroundColor: t.category_color }}>
-                            {t.category_name?.substring(0, 2)}
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white" style={{ backgroundColor: t.category_color }}>
+                            <IconRenderer name={t.category_icon} className="w-4 h-4" />
                           </div>
                           <span className="text-sm font-bold text-zinc-900">{t.category_name}</span>
                         </div>
@@ -640,8 +724,8 @@ export default function Transactions() {
               {filteredTransactions.map((t) => (
                 <div key={t.id} className="p-4 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-xs font-bold uppercase shrink-0" style={{ backgroundColor: t.category_color }}>
-                      {t.category_name?.substring(0, 2)}
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0" style={{ backgroundColor: t.category_color }}>
+                      <IconRenderer name={t.category_icon} className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
