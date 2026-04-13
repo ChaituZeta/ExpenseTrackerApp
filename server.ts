@@ -7,13 +7,19 @@ import app from './api/app.ts';
 
 dotenv.config();
 
+console.log('--- SERVER.TS HEARTBEAT ---');
+console.log('Starting server initialization...');
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
-  const expressApp = express();
-  expressApp.use(express.json());
+  try {
+    const expressApp = express();
+    expressApp.use(express.json());
+    
+    console.log('Registering routes...');
 
   // Bridge Express to Hono for all /api routes
   expressApp.all('/api/*', async (req, res) => {
@@ -59,9 +65,14 @@ async function startServer() {
     });
   }
 
-  expressApp.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+    expressApp.listen(PORT, "0.0.0.0", () => {
+      console.log(`SUCCESS: Server is listening on port ${PORT}`);
+      console.log(`URL: http://0.0.0.0:${PORT}`);
+    });
+  } catch (error) {
+    console.error('CRITICAL STARTUP ERROR:', error);
+    process.exit(1);
+  }
 }
 
 startServer();
