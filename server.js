@@ -12,18 +12,17 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 console.log('Starting FinTrack Application via server.js...');
+console.log('Node version:', process.version);
+console.log('Current directory:', process.cwd());
 
-// Use the local tsx binary from node_modules for better compatibility
-const tsxPath = path.join(__dirname, 'node_modules', '.bin', 'tsx');
+// We use node to run the tsx CLI script directly. 
+// This avoids "Permission denied" (code 126) errors that happen when 
+// the node_modules/.bin/tsx binary doesn't have execute permissions.
+const tsxCli = path.join(__dirname, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+console.log('Using tsx CLI at:', tsxCli);
 
-if (!existsSync(tsxPath)) {
-  console.error(`ERROR: tsx not found at ${tsxPath}. Did you run npm install?`);
-  process.exit(1);
-}
-
-const child = spawn(tsxPath, ['server.ts'], {
+const child = spawn(process.execPath, [tsxCli, 'server.ts'], {
   stdio: 'inherit',
-  shell: true,
   env: {
     ...process.env,
     NODE_ENV: 'production'
