@@ -4,14 +4,14 @@ import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
 import { handle } from 'hono/vercel';
 
-const app = new Hono().basePath('/api');
+const app = new Hono();
 
 // Global Error Handler
 app.onError((err, c) => {
   console.error('Hono Global Error:', err);
   return c.json({ 
     error: err.message || 'Internal Server Error',
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    type: 'GlobalError'
   }, 500);
 });
 
@@ -20,22 +20,23 @@ app.use('*', cors());
 
 // Shared Logic
 const getSupabase = (c: any) => {
-  const supabaseUrl = c.env?.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const supabaseServiceKey = c.env?.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const supabaseAnonKey = c.env?.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  // Try all possible env sources for Vercel/Node
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || c.env?.VITE_SUPABASE_URL;
+  const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || c.env?.VITE_SUPABASE_ANON_KEY;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || c.env?.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseUrl) console.error('DEBUG: VITE_SUPABASE_URL is missing');
-  if (!supabaseServiceKey) console.error('DEBUG: SUPABASE_SERVICE_ROLE_KEY is missing');
-  if (!supabaseAnonKey) console.error('DEBUG: VITE_SUPABASE_ANON_KEY is missing');
-
-  const finalKey = (supabaseServiceKey && supabaseServiceKey !== "your-service-role-key") 
-    ? supabaseServiceKey 
-    : supabaseAnonKey;
-
-  if (!supabaseUrl || !finalKey) {
-    throw new Error("Supabase configuration is incomplete. Check environment variables.");
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('Supabase Config Missing:', { 
+      hasUrl: !!supabaseUrl, 
+      hasAnon: !!supabaseAnonKey,
+      hasService: !!supabaseServiceKey 
+    });
+    throw new Error("Supabase configuration is incomplete. Check Vercel environment variables.");
   }
 
+  // Use service key for admin actions if available, otherwise anon key
+  const finalKey = (supabaseServiceKey && supabaseServiceKey.length > 20) ? supabaseServiceKey : supabaseAnonKey;
+  
   return createClient(supabaseUrl, finalKey);
 };
 
@@ -107,59 +108,41 @@ const isAdmin = async (c: any) => {
   }
 };
 
-// Routes
+// Routes - support both with and without /api prefix for Vercel
+app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
-app.post('/auth/login', async (c) => {
+app.post('/api/auth/login', async (c) => {
   const startTime = Date.now();
   let email = 'unknown';
   try {
-    const body = await c.req.json();
-    email = body.email;
+    const body = await c.req.json().catch(() => ({}));
+    email = body.email || 'not provided';
     const password = body.password;
     
-    console.log(`[${startTime}] Login attempt started for: ${email}`);
+    console.log(`[${startTime}] Login attempt: ${email}`);
     
     const supabase = getSupabase(c);
-    console.log(`[${Date.now()}] Supabase client initialized for ${email}`);
     
-    const authStart = Date.now();
-    // Add a timeout to the Supabase auth call
-    const authPromise = supabase.auth.signInWithPassword({ email, password });
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("Supabase auth request timed out")), 10000)
-    );
-    
-    const { data, error } = await Promise.race([authPromise, timeoutPromise]) as any;
-    const authEnd = Date.now();
-    console.log(`[${authEnd}] Supabase auth call took ${authEnd - authStart}ms for ${email}`);
+    // Auth call with increased timeout (20s)
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     
     if (error) {
-      console.error(`[${Date.now()}] Login error for ${email}:`, error.message);
+      console.error(`Login error for ${email}:`, error.message);
       return c.json({ error: error.message }, 401);
     }
     
     if (!data.user) {
-      console.error(`[${Date.now()}] Login failed: No user returned for ${email}`);
       return c.json({ error: "User not found" }, 404);
     }
 
-    // Get profile for role and other metadata
-    const profileStart = Date.now();
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', data.user.id)
       .maybeSingle();
-    const profileEnd = Date.now();
-    console.log(`[${profileEnd}] Profile fetch took ${profileEnd - profileStart}ms for ${email}`);
 
-    if (profileError) {
-      console.warn(`[${Date.now()}] Profile fetch error for ${email}:`, profileError.message);
-    }
-
-    const totalTime = Date.now() - startTime;
-    console.log(`[${Date.now()}] Login successful for ${email} in ${totalTime}ms`);
+    console.log(`Login success for ${email} in ${Date.now() - startTime}ms`);
 
     return c.json({
       session: data.session,
@@ -174,13 +157,17 @@ app.post('/auth/login', async (c) => {
       }
     });
   } catch (err: any) {
-    const totalTime = Date.now() - startTime;
-    console.error(`[${Date.now()}] Critical login error for ${email} after ${totalTime}ms:`, err);
-    return c.json({ error: err.message || "Internal server error during login" }, 500);
+    console.error(`Critical login error for ${email}:`, err);
+    return c.json({ error: err.message || "Internal server error" }, 500);
   }
 });
 
-app.post('/auth/register', async (c) => {
+app.post('/auth/login', async (c) => {
+  // Alias for /api/auth/login (some Vercel setups strip /api, some don't)
+  return c.redirect('/api/auth/login', 307);
+});
+
+app.post('/api/auth/register', async (c) => {
   try {
     const { email, password, name, phone } = await c.req.json();
     const supabase = getSupabase(c);
@@ -212,17 +199,19 @@ app.post('/auth/register', async (c) => {
       message: "Registration successful" 
     });
   } catch (err: any) {
-    return c.json({ error: err.message || "Internal server error during registration" }, 500);
+    return c.json({ error: err.message || "Internal server error" }, 500);
   }
 });
 
-app.post('/logs/create', async (c) => {
+app.post('/auth/register', async (c) => c.redirect('/api/auth/register', 307));
+
+app.post('/api/logs/create', async (c) => {
   try {
     const authHeader = c.req.header('Authorization');
     if (!authHeader) return c.json({ error: "Unauthorized" }, 401);
     
     const token = authHeader.split(' ')[1];
-    const { action, details } = await c.req.json();
+    const { action, details } = await c.req.json().catch(() => ({}));
     const supabase = getSupabase(c);
     
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
@@ -230,7 +219,7 @@ app.post('/logs/create', async (c) => {
 
     const { error } = await supabase.from('activity_logs').insert([{
       user_id: user.id,
-      user_name: user.user_metadata.name || user.email,
+      user_name: user.user_metadata?.name || user.email,
       action,
       details,
     }]);
@@ -238,13 +227,14 @@ app.post('/logs/create', async (c) => {
     if (error) throw error;
     return c.json({ success: true });
   } catch (err: any) {
-    // We don't want to break the app if logging fails
     console.error("Logging error:", err);
     return c.json({ error: err.message }, 500);
   }
 });
 
-app.get('/admin/users', async (c) => {
+app.post('/logs/create', async (c) => c.redirect('/api/logs/create', 307));
+
+app.get('/api/admin/users', async (c) => {
   const auth = await isAdmin(c);
   if (auth.error) return c.json({ error: auth.error }, auth.status as any);
 
@@ -258,7 +248,42 @@ app.get('/admin/users', async (c) => {
   return c.json(data);
 });
 
-app.get('/admin/transactions', async (c) => {
+app.get('/admin/users', async (c) => c.redirect('/api/admin/users', 301));
+
+app.get('/api/admin/transactions', async (c) => {
+  const auth = await isAdmin(c);
+  if (auth.error) return c.json({ error: auth.error }, auth.status as any);
+
+  const supabase = getSupabase(c);
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('*, category:categories(*)')
+    .order('date', { ascending: false });
+
+  if (error) return c.json({ error: error.message }, 500);
+  return c.json(data);
+});
+
+app.get('/admin/transactions', async (c) => c.redirect('/api/admin/transactions', 301));
+
+app.get('/api/admin/logs', async (c) => {
+  const auth = await isAdmin(c);
+  if (auth.error) return c.json({ error: auth.error }, auth.status as any);
+
+  const supabase = getSupabase(c);
+  const { data, error } = await supabase
+    .from('activity_logs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  if (error) return c.json({ error: error.message }, 500);
+  return c.json(data);
+});
+
+app.get('/admin/logs', async (c) => c.redirect('/api/admin/logs', 301));
+
+app.post('/api/admin/create-user', async (c) => {
   const auth = await isAdmin(c);
   if (auth.error) return c.json({ error: auth.error }, auth.status as any);
 
@@ -344,7 +369,7 @@ app.post('/admin/create-user', async (c) => {
   return c.json({ message: "User created successfully", user: authUser.user });
 });
 
-app.post('/admin/sync-profiles', async (c) => {
+app.post('/api/admin/sync-profiles', async (c) => {
   const auth = await isAdmin(c);
   if (auth.error) return c.json({ error: auth.error }, auth.status as any);
 
@@ -367,8 +392,11 @@ app.post('/admin/sync-profiles', async (c) => {
   return c.json({ message: `Synced ${profiles.length} profiles` });
 });
 
-app.post('/auth/forgot-password', async (c) => {
-  const { email } = await c.req.json();
+app.post('/admin/sync-profiles', async (c) => c.redirect('/api/admin/sync-profiles', 307));
+
+app.post('/api/auth/forgot-password', async (c) => {
+  const { email } = await c.req.json().catch(() => ({}));
+  if (!email) return c.json({ error: "Email is required" }, 400);
   const supabase = getSupabase(c);
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -402,8 +430,10 @@ app.post('/auth/forgot-password', async (c) => {
   }
 });
 
-app.post('/auth/reset-password', async (c) => {
-  const { email, otp, newPassword } = await c.req.json();
+app.post('/auth/forgot-password', async (c) => c.redirect('/api/auth/forgot-password', 307));
+
+app.post('/api/auth/reset-password', async (c) => {
+  const { email, otp, newPassword } = await c.req.json().catch(() => ({}));
   const supabase = getSupabase(c);
 
   const { data: otpData, error: otpError } = await supabase
@@ -436,6 +466,8 @@ app.post('/auth/reset-password', async (c) => {
 
   return c.json({ message: "Password updated successfully" });
 });
+
+app.post('/auth/reset-password', async (c) => c.redirect('/api/auth/reset-password', 307));
 
 export const config = {
   runtime: 'nodejs',

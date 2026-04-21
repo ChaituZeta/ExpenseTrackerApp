@@ -50,9 +50,10 @@ export const api = {
     
     login: async (data: any) => {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // Increased to 30s for Vercel cold starts
 
       try {
+        console.log('Attempting login via server API...');
         const response = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
