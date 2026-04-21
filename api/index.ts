@@ -15,8 +15,36 @@ app.onError((err, c) => {
   }, 500);
 });
 
-// Middleware
-app.use('*', cors());
+// Helper for robust header retrieval on Vercel Node runtime
+const getHeader = (c: any, name: string) => {
+  try {
+    // 1. Try standard Hono way
+    const h = c.req.header(name);
+    if (h) return h;
+  } catch (e) {
+    // 2. Fallback to raw headers if Hono's normalization fails
+    const rawHeaders = c.req.raw?.headers;
+    if (rawHeaders) {
+      if (typeof rawHeaders.get === 'function') return rawHeaders.get(name);
+      return rawHeaders[name.toLowerCase()] || rawHeaders[name];
+    }
+  }
+  return undefined;
+};
+
+// Middleware - Manual CORS to avoid buggy built-in middleware on Vercel Node
+app.use('*', async (c, next) => {
+  // We can't easily use the Origin header for logic if it crashes, 
+  // so we set broad CORS and move on.
+  c.header('Access-Control-Allow-Origin', '*');
+  c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  
+  if (c.req.method === 'OPTIONS') {
+    return c.text('', 204);
+  }
+  await next();
+});
 
 // Shared Logic
 const getSupabase = (c: any) => {
@@ -62,7 +90,7 @@ const getEmailTemplate = (title: string, content: string) => `
 `;
 
 const isAdmin = async (c: any) => {
-  const authHeader = c.req.header('Authorization');
+  const authHeader = getHeader(c, 'Authorization');
   if (!authHeader) return { error: "Unauthorized", status: 401 };
   
   try {
@@ -198,7 +226,7 @@ app.post('/auth/register', async (c) => c.redirect('/api/auth/register', 307));
 
 app.post('/api/logs/create', async (c) => {
   try {
-    const authHeader = c.req.header('Authorization');
+    const authHeader = getHeader(c, 'Authorization');
     if (!authHeader) return c.json({ error: "Unauthorized" }, 401);
     
     const token = authHeader.split(' ')[1];
