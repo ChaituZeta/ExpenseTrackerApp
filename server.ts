@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
-import app from './api/index.ts';
+import { app } from './api/index.ts';
 
 import fs from "fs";
 

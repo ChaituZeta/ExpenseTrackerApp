@@ -3,7 +3,10 @@ import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
 import { handle } from 'hono/vercel';
 
-const app = new Hono().basePath('/api');
+const app = new Hono();
+
+// Export the Hono app instance separately for server.ts bridge
+export { app };
 
 // Global Error Handler
 app.onError((err, c) => {
@@ -79,9 +82,13 @@ const isAdmin = async (c: any) => {
   }
 };
 
-// Ping & Diag
-app.get('/ping', (c) => c.text('pong'));
-app.get('/diag', async (c) => {
+// Ping & Diag (explicit paths for Vercel)
+app.get('/api/ping', (c) => {
+  console.log('[API] Ping request received');
+  return c.text('pong');
+});
+app.get('/api/diag', async (c) => {
+  console.log('[API] Diagnostic request received');
   try {
     const supabase = getSupabase(c);
     const { error } = await supabase.from('profiles').select('id').limit(1);
@@ -92,12 +99,12 @@ app.get('/diag', async (c) => {
 });
 
 // Auth
-app.post('/auth/login', async (c) => {
+app.post('/api/auth/login', async (c) => {
   try {
     const { email, password } = await c.req.json();
     const supabase = getSupabase(c);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return c.json({ error: error.message }, 401);
+    if (error) return c.json({ error: error.message, code: error.name }, 401);
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle();
     return c.json({
       session: data.session,
@@ -114,7 +121,7 @@ app.post('/auth/login', async (c) => {
   }
 });
 
-app.post('/auth/register', async (c) => {
+app.post('/api/auth/register', async (c) => {
   try {
     const { email, password, name, phone } = await c.req.json();
     const supabase = getSupabase(c);
@@ -130,7 +137,7 @@ app.post('/auth/register', async (c) => {
   }
 });
 
-app.post('/auth/forgot-password', async (c) => {
+app.post('/api/auth/forgot-password', async (c) => {
   try {
     const { email } = await c.req.json();
     const supabase = getSupabase(c, true);
@@ -149,7 +156,7 @@ app.post('/auth/forgot-password', async (c) => {
   }
 });
 
-app.post('/auth/reset-password', async (c) => {
+app.post('/api/auth/reset-password', async (c) => {
   try {
     const { email, otp, newPassword } = await c.req.json();
     const supabase = getSupabase(c, true);
@@ -166,7 +173,7 @@ app.post('/auth/reset-password', async (c) => {
   }
 });
 
-app.post('/logs/create', async (c) => {
+app.post('/api/logs/create', async (c) => {
   try {
     const authHeader = getHeader(c, 'Authorization');
     if (!authHeader) return c.json({ error: "Unauthorized" }, 401);
@@ -182,7 +189,7 @@ app.post('/logs/create', async (c) => {
   }
 });
 
-app.get('/admin/users', async (c) => {
+app.get('/api/admin/users', async (c) => {
   const auth = await isAdmin(c);
   if (auth.error) return c.json({ error: auth.error }, auth.status as any);
   const { data, error } = await getSupabase(c, true).from('profiles').select('*').order('created_at', { ascending: false });
@@ -190,7 +197,7 @@ app.get('/admin/users', async (c) => {
   return c.json(data);
 });
 
-app.get('/admin/transactions', async (c) => {
+app.get('/api/admin/transactions', async (c) => {
   const auth = await isAdmin(c);
   if (auth.error) return c.json({ error: auth.error }, auth.status as any);
   const { data, error } = await getSupabase(c, true).from('transactions').select('*, category:categories(*)').order('date', { ascending: false });
@@ -198,7 +205,7 @@ app.get('/admin/transactions', async (c) => {
   return c.json(data);
 });
 
-app.get('/admin/logs', async (c) => {
+app.get('/api/admin/logs', async (c) => {
   const auth = await isAdmin(c);
   if (auth.error) return c.json({ error: auth.error }, auth.status as any);
   const { data, error } = await getSupabase(c, true).from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100);
@@ -206,7 +213,7 @@ app.get('/admin/logs', async (c) => {
   return c.json(data);
 });
 
-app.post('/admin/create-user', async (c) => {
+app.post('/api/admin/create-user', async (c) => {
   const auth = await isAdmin(c);
   if (auth.error) return c.json({ error: auth.error }, auth.status as any);
   const { email, password, name, role } = await c.req.json();
@@ -225,7 +232,7 @@ app.post('/admin/create-user', async (c) => {
   return c.json({ message: "User created" });
 });
 
-app.post('/admin/sync-profiles', async (c) => {
+app.post('/api/admin/sync-profiles', async (c) => {
   const auth = await isAdmin(c);
   if (auth.error) return c.json({ error: auth.error }, auth.status as any);
   const supabase = getSupabase(c, true);
