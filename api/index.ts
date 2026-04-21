@@ -132,26 +132,41 @@ app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISO
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 app.post('/api/auth/login', async (c) => {
+  const loginId = Math.random().toString(36).substring(7);
   const startTime = Date.now();
-  let email = 'unknown';
+  console.log(`[${loginId}] Login request received`);
+  
   try {
-    const body = await c.req.json().catch(() => ({}));
-    email = body.email || 'not provided';
+    const body = await c.req.json().catch((e) => {
+      console.error(`[${loginId}] Body parse error:`, e);
+      return {};
+    });
+    
+    const email = body.email || 'not provided';
     const password = body.password;
     
-    console.log(`[${startTime}] Login attempt: ${email}`);
+    console.log(`[${loginId}] Login attempt: ${email}`);
+    
+    if (!email || email === 'not provided' || !password) {
+      return c.json({ error: "Email and password are required" }, 400);
+    }
     
     const supabase = getSupabase(c);
     
-    // Auth call with increased timeout (20s)
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    // Auth call with internal 25s timeout for debugging
+    const authPromise = supabase.auth.signInWithPassword({ email, password });
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("Supabase Auth Timeout (Internal)")), 25000)
+    );
+
+    const { data, error } = await Promise.race([authPromise, timeoutPromise]) as any;
     
     if (error) {
-      console.error(`Login error for ${email}:`, error.message);
+      console.error(`[${loginId}] Login error for ${email}:`, error.message);
       return c.json({ error: error.message }, 401);
     }
     
-    if (!data.user) {
+    if (!data?.user) {
       return c.json({ error: "User not found" }, 404);
     }
 
@@ -161,23 +176,26 @@ app.post('/api/auth/login', async (c) => {
       .eq('id', data.user.id)
       .maybeSingle();
 
-    console.log(`Login success for ${email} in ${Date.now() - startTime}ms`);
+    console.log(`[${loginId}] Login success for ${email} in ${Date.now() - startTime}ms`);
 
     return c.json({
       session: data.session,
       user: {
         id: data.user.id,
         email: data.user.email,
-        name: profile?.name || data.user.user_metadata.name || 'User',
-        phone: profile?.phone || data.user.user_metadata.phone,
-        avatar_url: profile?.avatar_url || data.user.user_metadata.avatar_url,
-        currency: profile?.currency || data.user.user_metadata.currency || '₹',
+        name: profile?.name || data.user.user_metadata?.name || 'User',
+        phone: profile?.phone || data.user.user_metadata?.phone,
+        avatar_url: profile?.avatar_url || data.user.user_metadata?.avatar_url,
+        currency: profile?.currency || data.user.user_metadata?.currency || '₹',
         role: profile?.role || (data.user.email === 'cbogineni@gmail.com' ? 'admin' : 'user'),
       }
     });
   } catch (err: any) {
-    console.error(`Critical login error for ${email}:`, err);
-    return c.json({ error: err.message || "Internal server error" }, 500);
+    console.error(`[${loginId}] Critical login error:`, err);
+    return c.json({ 
+      error: err.message || "Internal server error during login",
+      details: err.message === "Supabase Auth Timeout (Internal)" ? "The database connection timed out. Please try again." : undefined
+    }, err.message === "Supabase Auth Timeout (Internal)" ? 504 : 500);
   }
 });
 
