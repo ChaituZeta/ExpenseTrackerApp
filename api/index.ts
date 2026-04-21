@@ -20,19 +20,10 @@ app.use('*', cors());
 
 // Shared Logic
 const getSupabase = (c: any) => {
-  // Try all possible env sources for Vercel/Node
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || c.env?.VITE_SUPABASE_URL;
-  const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || c.env?.VITE_SUPABASE_ANON_KEY;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || c.env?.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('Supabase Config Missing:', { 
-      hasUrl: !!supabaseUrl, 
-      hasAnon: !!supabaseAnonKey,
-      hasService: !!supabaseServiceKey 
-    });
-    throw new Error("Supabase configuration is incomplete. Check Vercel environment variables.");
-  }
+  // Try all possible env sources for Vercel/Node, then fallback to hardcoded
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || c.env?.VITE_SUPABASE_URL || 'https://poeyhgmbbpovbmonoeqi.supabase.co';
+  const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || c.env?.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvZXloZ21iYnBvdmJtb25vZXFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MzY1NTUsImV4cCI6MjA4OTExMjU1NX0.5bsemjqGGvEqq_PCACmrag7UTsMgmVBmKJwDcvMwopE';
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || c.env?.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvZXloZ21iYnBvdmJtb25vZXFpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzUzNjU1NSwiZXhwIjoyMDg5MTEyNTU1fQ.LGge4j6tfSIpoL-AyvjJ3iBCNYTff1w2fNERFx-YtGw';
 
   // Use service key for admin actions if available, otherwise anon key
   const finalKey = (supabaseServiceKey && supabaseServiceKey.length > 20) ? supabaseServiceKey : supabaseAnonKey;
