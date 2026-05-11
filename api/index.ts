@@ -137,7 +137,7 @@ app.post('/api/auth/login', async (c) => {
   try {
     // 1. Parse body with safety
     console.log(`[${requestId}] Reading body...`);
-    const body = await withTimeout(c.req.json(), 5000, 'Body parsing timeout');
+    const body = await withTimeout(c.req.json(), 30000, 'Body parsing timeout');
     const { email, password } = body;
     console.log(`[${requestId}] Body parsed for ${email}`);
 
@@ -146,7 +146,7 @@ app.post('/api/auth/login', async (c) => {
     const supabase = getSupabase(c);
     const { data, error } = await withTimeout(
       supabase.auth.signInWithPassword({ email, password }),
-      25000,
+      60000,
       'Supabase auth timeout'
     );
     
@@ -201,14 +201,14 @@ app.post('/api/auth/register', async (c) => {
   console.log(`[${requestId}] REGISTER START`);
   
   try {
-    const body = await withTimeout(c.req.json(), 5000, 'Body parsing timeout');
+    const body = await withTimeout(c.req.json(), 30000, 'Body parsing timeout');
     const { email, password, name, phone } = body;
     console.log(`[${requestId}] Registering ${email}`);
 
     const supabase = getSupabase(c);
     const { data, error } = await withTimeout(
       supabase.auth.signUp({ email, password, options: { data: { name, phone, currency: '₹' } } }),
-      30000,
+      60000,
       'Supabase registration timeout'
     );
     
@@ -242,7 +242,7 @@ app.post('/api/auth/forgot-password', async (c) => {
   const requestId = Math.random().toString(36).substring(7);
   console.log(`[${requestId}] FORGOT-PASSWORD START`);
   try {
-    const { email } = await withTimeout(c.req.json(), 5000, 'Body parsing timeout');
+    const { email } = await withTimeout(c.req.json(), 30000, 'Body parsing timeout');
     const supabase = getSupabase(c, true);
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
@@ -276,7 +276,7 @@ app.post('/api/auth/reset-password', async (c) => {
   const requestId = Math.random().toString(36).substring(7);
   console.log(`[${requestId}] RESET-PASSWORD START`);
   try {
-    const { email, otp, newPassword } = await withTimeout(c.req.json(), 5000, 'Body parsing timeout');
+    const { email, otp, newPassword } = await withTimeout(c.req.json(), 30000, 'Body parsing timeout');
     const supabase = getSupabase(c, true);
     
     const { data: otpData } = await withTimeout(
@@ -318,7 +318,7 @@ app.post('/api/logs/create', async (c) => {
     const authHeader = getHeader(c, 'Authorization');
     if (!authHeader) return c.json({ error: "Unauthorized" }, 401);
     const token = authHeader.split(' ')[1];
-    const { action, details } = await withTimeout(c.req.json(), 5000, 'Body parsing timeout');
+    const { action, details } = await withTimeout(c.req.json(), 30000, 'Body parsing timeout');
     const supabase = getSupabase(c);
     const { data: { user }, error: authErr } = await withTimeout(supabase.auth.getUser(token), 10000, 'Auth verification timeout');
     if (authErr || !user) return c.json({ error: "Invalid session" }, 401);
@@ -417,7 +417,7 @@ app.post('/api/admin/create-user', async (c) => {
     const auth = await isAdmin(c);
     if (auth.error) return c.json({ error: auth.error }, auth.status as any);
     
-    const body = await withTimeout(c.req.json(), 5000, 'Body parsing timeout');
+    const body = await withTimeout(c.req.json(), 30000, 'Body parsing timeout');
     const { email, password, name, role } = body;
     console.log(`[${requestId}] Creating user ${email} with role ${role}`);
     
