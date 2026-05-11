@@ -114,16 +114,29 @@ const isAdmin = async (c: any) => {
 // Ping & Diag (explicit paths for Vercel)
 app.get('/api/ping', (c) => {
   console.log('[API] Ping request received');
-  return c.text('pong');
+  return c.json({ status: 'ok', version: '2.0.1', time: new Date().toISOString() });
 });
 app.get('/api/diag', async (c) => {
   console.log('[API] Diagnostic request received');
   try {
     const supabase = getSupabase(c);
     const { error } = await supabase.from('profiles').select('id').limit(1);
-    return c.json({ db: error ? 'error' : 'ok', env: { url: !!process.env.VITE_SUPABASE_URL || !!process.env.SUPABASE_URL, key: !!process.env.VITE_SUPABASE_ANON_KEY || !!process.env.SUPABASE_ANON_KEY } });
+    return c.json({ 
+      db: error ? 'error' : 'ok', 
+      db_error: error?.message,
+      version: '2.0.1',
+      env: { 
+        VITE_URL: !!process.env.VITE_SUPABASE_URL,
+        NEXT_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+        SUPA_URL: !!process.env.SUPABASE_URL,
+        VITE_KEY: !!process.env.VITE_SUPABASE_ANON_KEY,
+        NEXT_KEY: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        SUPA_KEY: !!process.env.SUPABASE_ANON_KEY,
+        SERVICE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY
+      } 
+    });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    return c.json({ error: e.message, version: '2.0.1' }, 500);
   }
 });
 
@@ -137,23 +150,31 @@ const withTimeout = (promise: Promise<any>, ms: number, message: string) => {
 
 // Robust body parser
 const parseJsonBody = async (c: any, requestId: string): Promise<any> => {
+  const contentType = c.req.header('content-type') || '';
+  const contentLength = parseInt(c.req.header('content-length') || '-1');
+  
+  console.log(`[${requestId}] Body info - Type: ${contentType}, Length: ${contentLength}`);
+  
+  if (contentLength === 0) return {};
+
   try {
-    // Try direct JSON parsing first - most reliable in Node.js runtime
-    console.log(`[${requestId}] Attempting c.req.json()...`);
+    // Attempt 1: c.req.json()
+    console.log(`[${requestId}] Attempt 1: c.req.json()...`);
     return await c.req.json();
   } catch (err: any) {
-    console.warn(`[${requestId}] c.req.json() failed:`, err.message);
+    console.warn(`[${requestId}] Attempt 1 failed:`, err.message);
     try {
-      // Fallback to text parsing
-      console.log(`[${requestId}] Attempting c.req.text()...`);
+      // Attempt 2: c.req.text() then JSON.parse
+      console.log(`[${requestId}] Attempt 2: c.req.text()...`);
       const text = await c.req.text();
-      console.log(`[${requestId}] Raw body length: ${text?.length || 0}`);
+      console.log(`[${requestId}] Raw body: ${text?.substring(0, 50)}...`);
       return text ? JSON.parse(text) : {};
     } catch (e: any) {
-      console.warn(`[${requestId}] All body parse attempts failed:`, e.message);
-      // Last resort: check if it's already parsed by a middleware (unlikely but possible)
+      console.warn(`[${requestId}] Attempt 2 failed:`, e.message);
+      // Attempt 3: raw req access (some runtimes)
       const rawReq = c.req.raw || c.req;
       if (rawReq.body && typeof rawReq.body === 'object' && !('getReader' in rawReq.body)) {
+        console.log(`[${requestId}] Attempt 3: Using rawReq.body object`);
         return rawReq.body;
       }
       return {};
@@ -218,6 +239,7 @@ app.post('/api/auth/login', async (c) => {
     console.log(`[${requestId}] LOGIN COMPLETE`);
     
     return c.json({
+      v: '2.0.1',
       session: data.session,
       user: {
         id: data.user.id, 

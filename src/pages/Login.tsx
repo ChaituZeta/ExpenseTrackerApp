@@ -29,7 +29,10 @@ export default function Login() {
       login(res.user as any);
       navigate('/');
     } catch (err: any) {
-      setError(err.message);
+      console.error('Login error detail:', err);
+      // If it's a diagnostic error, try to show the status code
+      const errorMsg = err.message || JSON.stringify(err);
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
