@@ -33,12 +33,31 @@ app.use('*', async (c, next) => {
 });
 
 // Shared Logic
+let supabaseClient: any = null;
+let supabaseAdminClient: any = null;
+
 const getSupabase = (c: any, isAdminAction = false) => {
   const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://poeyhgmbbpovbmonoeqi.supabase.co';
   const anon = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvZXloZ21iYnBvdmJtb25vZXFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MzY1NTUsImV4cCI6MjA4OTExMjU1NX0.5bsemjqGGvEqq_PCACmrag7UTsMgmVBmKJwDcvMwopE';
   const service = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvZXloZ21iYnBvdmJtb25vZXFpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzUzNjU1NSwiZXhwIjoyMDg5MTEyNTU1fQ.LGge4j6tfSIpoL-AyvjJ3iBCNYTff1w2fNERFx-YtGw';
-  const key = (isAdminAction && service && service.length > 20) ? service : anon;
-  return createClient(url, key);
+  
+  if (isAdminAction) {
+    if (!supabaseAdminClient) {
+      const key = (service && service.length > 20) ? service : anon;
+      supabaseAdminClient = createClient(url, key, {
+        auth: { persistSession: false },
+        global: { headers: { 'x-my-custom-header': 'fintrack-admin' } }
+      });
+    }
+    return supabaseAdminClient;
+  }
+
+  if (!supabaseClient) {
+    supabaseClient = createClient(url, anon, {
+      auth: { persistSession: false }
+    });
+  }
+  return supabaseClient;
 };
 
 const getTransporter = () => {
@@ -50,6 +69,10 @@ const getTransporter = () => {
       user: process.env.SMTP_USER || "cbogineni@gmail.com",
       pass: process.env.SMTP_PASS || "zmel ckmu jfqn pqwc",
     },
+    // Add connection timeout
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000
   });
 };
 
@@ -92,156 +115,411 @@ app.get('/api/diag', async (c) => {
   try {
     const supabase = getSupabase(c);
     const { error } = await supabase.from('profiles').select('id').limit(1);
-    return c.json({ db: error ? 'error' : 'ok', env: { url: !!process.env.VITE_SUPABASE_URL, key: !!process.env.VITE_SUPABASE_ANON_KEY } });
+    return c.json({ db: error ? 'error' : 'ok', env: { url: !!process.env.VITE_SUPABASE_URL || !!process.env.SUPABASE_URL, key: !!process.env.VITE_SUPABASE_ANON_KEY || !!process.env.SUPABASE_ANON_KEY } });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }
 });
 
+// Helper for timeout
+const withTimeout = (promise: Promise<any>, ms: number, message: string) => {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))
+  ]);
+};
+
 // Auth
 app.post('/api/auth/login', async (c) => {
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[${requestId}] LOGIN START`);
+  
   try {
-    const { email, password } = await c.req.json();
+    // 1. Parse body with safety
+    console.log(`[${requestId}] Reading body...`);
+    const body = await withTimeout(c.req.json(), 5000, 'Body parsing timeout');
+    const { email, password } = body;
+    console.log(`[${requestId}] Body parsed for ${email}`);
+
+    // 2. Auth with Supabase
+    console.log(`[${requestId}] Supabase signIn...`);
     const supabase = getSupabase(c);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return c.json({ error: error.message, code: error.name }, 401);
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle();
+    const { data, error } = await withTimeout(
+      supabase.auth.signInWithPassword({ email, password }),
+      25000,
+      'Supabase auth timeout'
+    );
+    
+    if (error) {
+      console.log(`[${requestId}] Auth error: ${error.message}`);
+      let msg = error.message;
+      if (msg.toLowerCase().includes('invalid login credentials')) msg = "Invalid email or password";
+      return c.json({ error: msg, code: error.name }, 401);
+    }
+    
+    if (!data.user) {
+      console.log(`[${requestId}] Auth success but no user returned`);
+      return c.json({ error: 'Authentication succeeded but no user data was returned' }, 500);
+    }
+
+    console.log(`[${requestId}] Auth success for ${data.user.id}`);
+
+    // 3. Fetch Profile
+    console.log(`[${requestId}] Fetching profile...`);
+    const { data: profile, error: profileError } = await withTimeout(
+      supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle(),
+      10000,
+      'Profile fetch timeout'
+    );
+    
+    if (profileError) {
+      console.warn(`[${requestId}] Profile fetch error:`, profileError.message);
+    }
+
+    console.log(`[${requestId}] LOGIN COMPLETE`);
+    
     return c.json({
       session: data.session,
       user: {
-        id: data.user.id, email: data.user.email,
+        id: data.user.id, 
+        email: data.user.email,
         name: profile?.name || data.user.user_metadata?.name || 'User',
-        phone: profile?.phone, avatar_url: profile?.avatar_url,
+        phone: profile?.phone, 
+        avatar_url: profile?.avatar_url,
         currency: profile?.currency || '₹',
         role: profile?.role || (data.user.email === 'cbogineni@gmail.com' ? 'admin' : 'user'),
       }
     });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    console.error(`[${requestId}] LOGIN FATAL ERROR:`, e.message);
+    return c.json({ error: e.message || 'Internal login error' }, e.message?.includes('timeout') ? 504 : 500);
   }
 });
 
 app.post('/api/auth/register', async (c) => {
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[${requestId}] REGISTER START`);
+  
   try {
-    const { email, password, name, phone } = await c.req.json();
+    const body = await withTimeout(c.req.json(), 5000, 'Body parsing timeout');
+    const { email, password, name, phone } = body;
+    console.log(`[${requestId}] Registering ${email}`);
+
     const supabase = getSupabase(c);
-    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name, phone, currency: '₹' } } });
-    if (error) return c.json({ error: error.message }, 400);
-    if (data.user) {
-      const adminClient = getSupabase(c, true);
-      await adminClient.from('profiles').upsert({ id: data.user.id, email, name, phone, role: email === 'cbogineni@gmail.com' ? 'admin' : 'user', currency: '₹' });
+    const { data, error } = await withTimeout(
+      supabase.auth.signUp({ email, password, options: { data: { name, phone, currency: '₹' } } }),
+      30000,
+      'Supabase registration timeout'
+    );
+    
+    if (error) {
+      console.log(`[${requestId}] Register error: ${error.message}`);
+      let msg = error.message;
+      if (msg.includes('already registered')) msg = "Email already in use";
+      if (msg.includes('Password should be')) msg = "Password is too weak (min 6 characters)";
+      return c.json({ error: msg }, 400);
     }
+    
+    if (data.user) {
+      console.log(`[${requestId}] Creating profile for ${data.user.id}`);
+      const adminClient = getSupabase(c, true);
+      await withTimeout(
+        adminClient.from('profiles').upsert({ id: data.user.id, email, name, phone, role: email === 'cbogineni@gmail.com' ? 'admin' : 'user', currency: '₹' }),
+        10000,
+        'Profile creation timeout'
+      ).catch(e => console.warn(`[${requestId}] Profile upsert error:`, e.message));
+    }
+    
+    console.log(`[${requestId}] REGISTER COMPLETE`);
     return c.json({ user: data.user, session: data.session });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    console.error(`[${requestId}] REGISTER FATAL ERROR:`, e.message);
+    return c.json({ error: e.message || 'Internal registration error' }, e.message?.includes('timeout') ? 504 : 500);
   }
 });
 
 app.post('/api/auth/forgot-password', async (c) => {
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[${requestId}] FORGOT-PASSWORD START`);
   try {
-    const { email } = await c.req.json();
+    const { email } = await withTimeout(c.req.json(), 5000, 'Body parsing timeout');
     const supabase = getSupabase(c, true);
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    await supabase.from('otps').upsert({ email, otp, expires_at: expiresAt }, { onConflict: 'email' });
+    
+    await withTimeout(
+      supabase.from('otps').upsert({ email, otp, expires_at: expiresAt }, { onConflict: 'email' }),
+      10000,
+      'Database UPSERT timeout'
+    );
+    
     const transporter = getTransporter();
-    await transporter.sendMail({
-      from: `"FinTrack" <${process.env.SMTP_USER || "cbogineni@gmail.com"}>`,
-      to: email, subject: "Reset Code",
-      html: getEmailTemplate("Reset Password", `<p>Code: <b>${otp}</b></p>`),
-    });
+    await withTimeout(
+      transporter.sendMail({
+        from: `"FinTrack" <${process.env.SMTP_USER || "cbogineni@gmail.com"}>`,
+        to: email, subject: "Reset Code",
+        html: getEmailTemplate("Reset Password", `<p>Code: <b>${otp}</b></p>`),
+      }),
+      20000,
+      'Email sending timeout'
+    );
+    
+    console.log(`[${requestId}] FORGOT-PASSWORD COMPLETE`);
     return c.json({ message: "OTP sent" });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    console.error(`[${requestId}] FORGOT-PASSWORD ERROR:`, e.message);
+    return c.json({ error: e.message }, e.message?.includes('timeout') ? 504 : 500);
   }
 });
 
 app.post('/api/auth/reset-password', async (c) => {
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[${requestId}] RESET-PASSWORD START`);
   try {
-    const { email, otp, newPassword } = await c.req.json();
+    const { email, otp, newPassword } = await withTimeout(c.req.json(), 5000, 'Body parsing timeout');
     const supabase = getSupabase(c, true);
-    const { data: otpData } = await supabase.from('otps').select('*').eq('email', email).eq('otp', otp).gt('expires_at', new Date().toISOString()).maybeSingle();
+    
+    const { data: otpData } = await withTimeout(
+      supabase.from('otps').select('*').eq('email', email).eq('otp', otp).gt('expires_at', new Date().toISOString()).maybeSingle(),
+      10000,
+      'OTP validation timeout'
+    );
+    
     if (!otpData) return c.json({ error: "Invalid OTP" }, 400);
-    const { data: userData } = await supabase.auth.admin.listUsers();
+    
+    const { data: userData } = await withTimeout(
+      supabase.auth.admin.listUsers(),
+      15000,
+      'User fetch timeout'
+    );
+    
     const user = userData?.users.find((u: any) => u.email === email);
     if (!user) return c.json({ error: "User not found" }, 404);
-    await supabase.auth.admin.updateUserById(user.id, { password: newPassword });
-    await supabase.from('otps').delete().eq('email', email);
+    
+    await withTimeout(
+      supabase.auth.admin.updateUserById(user.id, { password: newPassword }),
+      15000,
+      'Password update timeout'
+    );
+    
+    await supabase.from('otps').delete().eq('email', email).catch(() => {});
+    
+    console.log(`[${requestId}] RESET-PASSWORD COMPLETE`);
     return c.json({ message: "Password reset successful" });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    console.error(`[${requestId}] RESET-PASSWORD ERROR:`, e.message);
+    return c.json({ error: e.message }, e.message?.includes('timeout') ? 504 : 500);
   }
 });
 
 app.post('/api/logs/create', async (c) => {
+  const requestId = Math.random().toString(36).substring(7);
   try {
     const authHeader = getHeader(c, 'Authorization');
     if (!authHeader) return c.json({ error: "Unauthorized" }, 401);
     const token = authHeader.split(' ')[1];
-    const { action, details } = await c.req.json();
+    const { action, details } = await withTimeout(c.req.json(), 5000, 'Body parsing timeout');
     const supabase = getSupabase(c);
-    const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) return c.json({ error: "Invalid session" }, 401);
-    await supabase.from('activity_logs').insert([{ user_id: user.id, user_name: user.user_metadata?.name || user.email, action, details }]);
+    const { data: { user }, error: authErr } = await withTimeout(supabase.auth.getUser(token), 10000, 'Auth verification timeout');
+    if (authErr || !user) return c.json({ error: "Invalid session" }, 401);
+    
+    const { error: insertErr } = await withTimeout(
+      supabase.from('activity_logs').insert([{ user_id: user.id, user_name: user.user_metadata?.name || user.email, action, details }]),
+      10000,
+      'Log insertion timeout'
+    );
+    
+    if (insertErr) {
+      console.error(`[${requestId}] Log insertion error:`, insertErr.message);
+      return c.json({ error: insertErr.message }, 500);
+    }
+    
     return c.json({ success: true });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    console.error(`[${requestId}] ACTIVITY-LOG ERROR:`, e.message);
+    return c.json({ error: e.message }, e.message?.includes('timeout') ? 504 : 500);
   }
 });
 
 app.get('/api/admin/users', async (c) => {
-  const auth = await isAdmin(c);
-  if (auth.error) return c.json({ error: auth.error }, auth.status as any);
-  const { data, error } = await getSupabase(c, true).from('profiles').select('*').order('created_at', { ascending: false });
-  if (error) return c.json({ error: error.message }, 500);
-  return c.json(data);
+  const requestId = Math.random().toString(36).substring(7);
+  try {
+    const auth = await isAdmin(c);
+    if (auth.error) return c.json({ error: auth.error }, auth.status as any);
+    
+    const { data, error } = await withTimeout(
+      getSupabase(c, true).from('profiles').select('*').order('created_at', { ascending: false }),
+      15000,
+      'Users fetch timeout'
+    );
+    
+    if (error) {
+      console.error(`[${requestId}] Admin users fetch error:`, error.message);
+      return c.json({ error: error.message }, 500);
+    }
+    return c.json(data);
+  } catch (e: any) {
+    console.error(`[${requestId}] ADMIN-USERS ERROR:`, e.message);
+    return c.json({ error: e.message }, e.message?.includes('timeout') ? 504 : 500);
+  }
 });
 
 app.get('/api/admin/transactions', async (c) => {
-  const auth = await isAdmin(c);
-  if (auth.error) return c.json({ error: auth.error }, auth.status as any);
-  const { data, error } = await getSupabase(c, true).from('transactions').select('*, category:categories(*)').order('date', { ascending: false });
-  if (error) return c.json({ error: error.message }, 500);
-  return c.json(data);
+  const requestId = Math.random().toString(36).substring(7);
+  try {
+    const auth = await isAdmin(c);
+    if (auth.error) return c.json({ error: auth.error }, auth.status as any);
+    
+    const { data, error } = await withTimeout(
+      getSupabase(c, true).from('transactions').select('*, category:categories(*)').order('date', { ascending: false }),
+      20000,
+      'Transactions fetch timeout'
+    );
+    
+    if (error) {
+      console.error(`[${requestId}] Admin transactions fetch error:`, error.message);
+      return c.json({ error: error.message }, 500);
+    }
+    return c.json(data);
+  } catch (e: any) {
+    console.error(`[${requestId}] ADMIN-TRANSACTIONS ERROR:`, e.message);
+    return c.json({ error: e.message }, e.message?.includes('timeout') ? 504 : 500);
+  }
 });
 
 app.get('/api/admin/logs', async (c) => {
-  const auth = await isAdmin(c);
-  if (auth.error) return c.json({ error: auth.error }, auth.status as any);
-  const { data, error } = await getSupabase(c, true).from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100);
-  if (error) return c.json({ error: error.message }, 500);
-  return c.json(data);
+  const requestId = Math.random().toString(36).substring(7);
+  try {
+    const auth = await isAdmin(c);
+    if (auth.error) return c.json({ error: auth.error }, auth.status as any);
+    
+    const { data, error } = await withTimeout(
+      getSupabase(c, true).from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100),
+      15000,
+      'Logs fetch timeout'
+    );
+    
+    if (error) {
+      console.error(`[${requestId}] Admin logs fetch error:`, error.message);
+      return c.json({ error: error.message }, 500);
+    }
+    return c.json(data);
+  } catch (e: any) {
+    console.error(`[${requestId}] ADMIN-LOGS ERROR:`, e.message);
+    return c.json({ error: e.message }, e.message?.includes('timeout') ? 504 : 500);
+  }
 });
 
 app.post('/api/admin/create-user', async (c) => {
-  const auth = await isAdmin(c);
-  if (auth.error) return c.json({ error: auth.error }, auth.status as any);
-  const { email, password, name, role } = await c.req.json();
-  const supabase = getSupabase(c, true);
-  const { data: authUser, error: authErr } = await supabase.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name } });
-  if (authErr) return c.json({ error: authErr.message }, 400);
-  await supabase.from('profiles').upsert({ id: authUser.user.id, email, name, role: role || 'client' });
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[${requestId}] ADMIN CREATE-USER START`);
   try {
-    const transporter = getTransporter();
-    await transporter.sendMail({
-      from: `"FinTrack Admin" <${process.env.SMTP_USER || "cbogineni@gmail.com"}>`,
-      to: email, subject: "Account Created",
-      html: getEmailTemplate("Welcome!", `<p>Log in with ${email}</p>`),
-    });
-  } catch (e) {}
-  return c.json({ message: "User created" });
+    const auth = await isAdmin(c);
+    if (auth.error) return c.json({ error: auth.error }, auth.status as any);
+    
+    const body = await withTimeout(c.req.json(), 5000, 'Body parsing timeout');
+    const { email, password, name, role } = body;
+    console.log(`[${requestId}] Creating user ${email} with role ${role}`);
+    
+    const supabase = getSupabase(c, true);
+    
+    // 1. Create Auth User
+    const { data: authUser, error: authErr } = await withTimeout(
+      supabase.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name } }),
+      20000,
+      'Supabase auth user creation timeout'
+    );
+    
+    if (authErr) {
+      console.error(`[${requestId}] Auth creation error:`, authErr.message);
+      let msg = authErr.message;
+      if (msg.includes('already registered')) msg = "Email already in use";
+      if (msg.includes('Password should be')) msg = "Password is too weak (min 6 characters)";
+      return c.json({ error: msg }, 400);
+    }
+    
+    if (!authUser.user) {
+      console.error(`[${requestId}] Auth user creation succeeded but no user returned`);
+      return c.json({ error: "Failed to retrieve created user data" }, 500);
+    }
+    
+    // 2. Create Profile
+    const { error: profileErr } = await withTimeout(
+      supabase.from('profiles').upsert({ id: authUser.user.id, email, name, role: role || 'client' }),
+      10000,
+      'Profile upsert timeout'
+    );
+    
+    if (profileErr) {
+      console.error(`[${requestId}] Profile creation error:`, profileErr.message);
+      // We don't return 400 here because the user is already created in Auth. 
+      // But we should notify about the partial success.
+      return c.json({ error: `User created in Auth, but profile sync failed: ${profileErr.message}`, partial: true }, 500);
+    }
+    
+    // 3. Send Email (non-blocking)
+    try {
+      const transporter = getTransporter();
+      await withTimeout(
+        transporter.sendMail({
+          from: `"FinTrack Admin" <${process.env.SMTP_USER || "cbogineni@gmail.com"}>`,
+          to: email, subject: "Account Created",
+          html: getEmailTemplate("Welcome!", `<p>An account has been created for you in FinTrack.</p><p>Email: <b>${email}</b></p><p>You can now log in to the system.</p>`),
+        }),
+        15000,
+        'Email delivery timeout'
+      );
+    } catch (e: any) {
+      console.warn(`[${requestId}] Welcome email failed:`, e.message);
+    }
+    
+    console.log(`[${requestId}] ADMIN CREATE-USER COMPLETE`);
+    return c.json({ message: "User created and profile synced successfully" });
+  } catch (e: any) {
+    console.error(`[${requestId}] ADMIN CREATE-USER FATAL ERROR:`, e.message);
+    return c.json({ error: e.message }, e.message?.includes('timeout') ? 504 : 500);
+  }
 });
 
 app.post('/api/admin/sync-profiles', async (c) => {
-  const auth = await isAdmin(c);
-  if (auth.error) return c.json({ error: auth.error }, auth.status as any);
-  const supabase = getSupabase(c, true);
-  const { data: { users }, error } = await supabase.auth.admin.listUsers();
-  if (error) return c.json({ error: error.message }, 500);
-  const profiles = users.map(u => ({ id: u.id, email: u.email, name: u.user_metadata?.name || 'User', role: u.email === 'cbogineni@gmail.com' ? 'admin' : 'client' }));
-  await supabase.from('profiles').upsert(profiles, { onConflict: 'id', ignoreDuplicates: true });
-  return c.json({ message: "Synced" });
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[${requestId}] SYNC-PROFILES START`);
+  try {
+    const auth = await isAdmin(c);
+    if (auth.error) return c.json({ error: auth.error }, auth.status as any);
+    
+    const supabase = getSupabase(c, true);
+    const { data: { users }, error } = await withTimeout(supabase.auth.admin.listUsers(), 20000, 'User list timeout');
+    
+    if (error) {
+      console.error(`[${requestId}] List users error:`, error.message);
+      return c.json({ error: error.message }, 500);
+    }
+    
+    const profiles = users.map(u => ({ 
+      id: u.id, 
+      email: u.email, 
+      name: u.user_metadata?.name || 'User', 
+      role: u.email === 'cbogineni@gmail.com' ? 'admin' : 'client' 
+    }));
+    
+    const { error: upsertErr } = await withTimeout(
+      supabase.from('profiles').upsert(profiles, { onConflict: 'id', ignoreDuplicates: true }),
+      20000,
+      'Profiles batch upsert timeout'
+    );
+    
+    if (upsertErr) {
+      console.error(`[${requestId}] Upsert profiles error:`, upsertErr.message);
+      return c.json({ error: upsertErr.message }, 500);
+    }
+    
+    console.log(`[${requestId}] SYNC-PROFILES COMPLETE`);
+    return c.json({ message: "Profiles synced successfully" });
+  } catch (e: any) {
+    console.error(`[${requestId}] SYNC-PROFILES ERROR:`, e.message);
+    return c.json({ error: e.message }, e.message?.includes('timeout') ? 504 : 500);
+  }
 });
 
-export const config = { runtime: 'nodejs' };
 export default handle(app);

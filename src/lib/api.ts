@@ -202,7 +202,7 @@ export const api = {
         let errorMessage = 'Failed to send OTP';
         if (contentType && contentType.includes("application/json")) {
           const err = await response.json();
-          errorMessage = err.message || errorMessage;
+          errorMessage = err.error || err.message || errorMessage;
         } else {
           const text = await response.text();
           console.error('Forgot password non-JSON error:', text.substring(0, 200));
@@ -229,7 +229,7 @@ export const api = {
         let errorMessage = 'Failed to reset password';
         if (contentType && contentType.includes("application/json")) {
           const err = await response.json();
-          errorMessage = err.message || errorMessage;
+          errorMessage = err.error || err.message || errorMessage;
         } else {
           const text = await response.text();
           console.error('Reset password non-JSON error:', text.substring(0, 200));
@@ -272,7 +272,7 @@ export const api = {
           let errorMessage = 'Failed to fetch users.';
           if (contentType && contentType.includes("application/json")) {
             const err = await response.json();
-            errorMessage = err.message || errorMessage;
+            errorMessage = err.error || err.message || errorMessage;
           } else {
             const text = await response.text();
             console.error('Fetch users non-JSON error:', text.substring(0, 200));
@@ -337,7 +337,7 @@ export const api = {
           let errorMessage = 'Failed to fetch transactions.';
           if (contentType && contentType.includes("application/json")) {
             const err = await response.json();
-            errorMessage = err.message || errorMessage;
+            errorMessage = err.error || err.message || errorMessage;
           } else {
             const text = await response.text();
             console.error('Fetch transactions non-JSON error:', text.substring(0, 200));
@@ -390,7 +390,7 @@ export const api = {
           let errorMessage = 'Failed to fetch logs.';
           if (contentType && contentType.includes("application/json")) {
             const err = await response.json();
-            errorMessage = err.message || errorMessage;
+            errorMessage = err.error || err.message || errorMessage;
           } else {
             const text = await response.text();
             console.error('Fetch logs non-JSON error:', text.substring(0, 200));
@@ -444,10 +444,21 @@ export const api = {
       });
       
       const contentType = response.headers.get("content-type");
-      if (!response.ok || !contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        console.error('Create user error response:', text);
-        throw new Error('Failed to create user. Backend might be unavailable or returned an error.');
+      if (!response.ok) {
+        let errorMessage = 'Failed to create user.';
+        if (contentType && contentType.includes("application/json")) {
+          const err = await response.json();
+          errorMessage = err.error || err.message || errorMessage;
+          // Handle partial success (Auth OK, Profile FAIL)
+          if (err.partial) {
+            console.warn('Partial success in user creation:', errorMessage);
+          }
+        } else {
+          const text = await response.text();
+          console.error('Create user non-JSON error:', text.substring(0, 200));
+          errorMessage = `Server Error: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
       return response.json();
     },
@@ -468,7 +479,7 @@ export const api = {
         let errorMessage = 'Failed to sync profiles.';
         if (contentType && contentType.includes("application/json")) {
           const err = await response.json();
-          errorMessage = err.message || errorMessage;
+          errorMessage = err.error || err.message || errorMessage;
         } else {
           const text = await response.text();
           console.error('Sync profiles non-JSON error body:', text.substring(0, 200));
