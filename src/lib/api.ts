@@ -66,7 +66,7 @@ export const api = {
     
     login: async (data: any) => {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // Increased to 30s for Vercel cold starts
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // Increased to 45s for Vercel/Supabase cold starts
 
       try {
         console.log('Attempting login via server API...');

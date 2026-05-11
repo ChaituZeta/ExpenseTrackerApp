@@ -37,10 +37,16 @@ let supabaseClient: any = null;
 let supabaseAdminClient: any = null;
 
 const getSupabase = (c: any, isAdminAction = false) => {
-  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://poeyhgmbbpovbmonoeqi.supabase.co';
-  const anon = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvZXloZ21iYnBvdmJtb25vZXFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MzY1NTUsImV4cCI6MjA4OTExMjU1NX0.5bsemjqGGvEqq_PCACmrag7UTsMgmVBmKJwDcvMwopE';
-  const service = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvZXloZ21iYnBvdmJtb25vZXFpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzUzNjU1NSwiZXhwIjoyMDg5MTEyNTU1fQ.LGge4j6tfSIpoL-AyvjJ3iBCNYTff1w2fNERFx-YtGw';
+  const envUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const envAnon = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  const envService = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const url = envUrl || 'https://poeyhgmbbpovbmonoeqi.supabase.co';
+  const anon = envAnon || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvZXloZ21iYnBvdmJtb25vZXFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MzY1NTUsImV4cCI6MjA4OTExMjU1NX0.5bsemjqGGvEqq_PCACmrag7UTsMgmVBmKJwDcvMwopE';
+  const service = envService || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvZXloZ21iYnBvdmJtb25vZXFpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzUzNjU1NSwiZXhwIjoyMDg5MTEyNTU1fQ.LGge4j6tfSIpoL-AyvjJ3iBCNYTff1w2fNERFx-YtGw';
   
+  if (!envUrl) console.warn('[Supabase] No environment URL found, using fallback');
+
   if (isAdminAction) {
     if (!supabaseAdminClient) {
       const key = (service && service.length > 20) ? service : anon;
@@ -164,16 +170,19 @@ app.post('/api/auth/login', async (c) => {
 
     console.log(`[${requestId}] Auth success for ${data.user.id}`);
 
-    // 3. Fetch Profile
+    // 3. Fetch Profile (Non-fatal)
     console.log(`[${requestId}] Fetching profile...`);
-    const { data: profile, error: profileError } = await withTimeout(
-      supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle(),
-      10000,
-      'Profile fetch timeout'
-    );
-    
-    if (profileError) {
-      console.warn(`[${requestId}] Profile fetch error:`, profileError.message);
+    let profile: any = null;
+    try {
+      const { data: profileData, error: profileError } = await withTimeout(
+        supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle(),
+        15000,
+        'Profile fetch timeout'
+      );
+      if (profileError) console.warn(`[${requestId}] Profile fetch error:`, profileError.message);
+      else profile = profileData;
+    } catch (profileTimeoutErr: any) {
+      console.warn(`[${requestId}] Profile fetch timed out or failed:`, profileTimeoutErr.message);
     }
 
     console.log(`[${requestId}] LOGIN COMPLETE`);
