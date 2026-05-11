@@ -66,13 +66,16 @@ export const api = {
     
     login: async (data: any) => {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // Increased to 60s for Vercel/Supabase cold starts
+      const timeoutId = setTimeout(() => controller.abort(), 40000); // 40s (enough to see if Vercel kills it at 10s)
 
       try {
         console.log('Attempting login via server API...');
         const response = await fetch('/api/auth/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
           body: JSON.stringify(data),
           signal: controller.signal
         });
@@ -81,19 +84,22 @@ export const api = {
         
         const contentType = response.headers.get("content-type");
         if (!response.ok) {
+          console.error(`Login request failed with status: ${response.status} ${response.statusText}`);
           let errorMessage = `Login failed (${response.status})`;
           if (contentType && contentType.includes("application/json")) {
             const err = await response.json();
             errorMessage = err.error || err.message || errorMessage;
           } else {
             const text = await response.text();
-            console.error('Login error (non-JSON):', text.substring(0, 200));
-            errorMessage = `Server Error: ${response.status} ${response.statusText}`;
+            console.error('Login error body (truncated):', text.substring(0, 500));
+            if (response.status === 504) errorMessage = "Vercel Gateway Timeout (10s limit exceeded). Supabase might be slow or cold-starting.";
+            else errorMessage = `Server Error (${response.status}): ${text.substring(0, 100)}`;
           }
           throw new Error(errorMessage);
         }
         
         const res = await response.json();
+        console.log('Login API response received:', res.v ? `v${res.v}` : 'legacy');
         
         // CRITICAL: Set the session in the client-side Supabase instance
         if (res.session) {

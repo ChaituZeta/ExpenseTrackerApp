@@ -33,9 +33,6 @@ app.use('*', async (c, next) => {
 });
 
 // Shared Logic
-let supabaseClient: any = null;
-let supabaseAdminClient: any = null;
-
 const getSupabase = (c: any, isAdminAction = false) => {
   const envUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const envAnon = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
@@ -43,27 +40,16 @@ const getSupabase = (c: any, isAdminAction = false) => {
 
   const url = envUrl || 'https://poeyhgmbbpovbmonoeqi.supabase.co';
   const anon = envAnon || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvZXloZ21iYnBvdmJtb25vZXFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MzY1NTUsImV4cCI6MjA4OTExMjU1NX0.5bsemjqGGvEqq_PCACmrag7UTsMgmVBmKJwDcvMwopE';
-  const service = envService || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvZXloZ21iYnBvdmJtb25vZXFpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzUzNjU1NSwiZXhwIjoyMDg5MTEyNTU1fQ.LGge4j6tfSIpoL-AyvjJ3iBCNYTff1w2fNERFx-YtGw';
   
-  if (!envUrl) console.warn('[Supabase] No environment URL found, using fallback');
-
-  if (isAdminAction) {
-    if (!supabaseAdminClient) {
-      const key = (service && service.length > 20) ? service : anon;
-      supabaseAdminClient = createClient(url, key, {
-        auth: { persistSession: false },
-        global: { headers: { 'x-my-custom-header': 'fintrack-admin' } }
-      });
-    }
-    return supabaseAdminClient;
-  }
-
-  if (!supabaseClient) {
-    supabaseClient = createClient(url, anon, {
+  if (isAdminAction && envService) {
+    return createClient(url, envService, {
       auth: { persistSession: false }
     });
   }
-  return supabaseClient;
+
+  return createClient(url, anon, {
+    auth: { persistSession: false }
+  });
 };
 
 const getTransporter = () => {
@@ -150,33 +136,16 @@ const withTimeout = (promise: Promise<any>, ms: number, message: string) => {
 
 // Robust body parser
 const parseJsonBody = async (c: any, requestId: string): Promise<any> => {
-  const contentType = c.req.header('content-type') || '';
-  const contentLength = parseInt(c.req.header('content-length') || '-1');
-  
-  console.log(`[${requestId}] Body info - Type: ${contentType}, Length: ${contentLength}`);
-  
-  if (contentLength === 0) return {};
-
   try {
-    // Attempt 1: c.req.json()
-    console.log(`[${requestId}] Attempt 1: c.req.json()...`);
+    // Standard Hono approach - most reliable
     return await c.req.json();
   } catch (err: any) {
-    console.warn(`[${requestId}] Attempt 1 failed:`, err.message);
+    console.warn(`[${requestId}] c.req.json() failed, trying text fallback:`, err.message);
     try {
-      // Attempt 2: c.req.text() then JSON.parse
-      console.log(`[${requestId}] Attempt 2: c.req.text()...`);
       const text = await c.req.text();
-      console.log(`[${requestId}] Raw body: ${text?.substring(0, 50)}...`);
       return text ? JSON.parse(text) : {};
     } catch (e: any) {
-      console.warn(`[${requestId}] Attempt 2 failed:`, e.message);
-      // Attempt 3: raw req access (some runtimes)
-      const rawReq = c.req.raw || c.req;
-      if (rawReq.body && typeof rawReq.body === 'object' && !('getReader' in rawReq.body)) {
-        console.log(`[${requestId}] Attempt 3: Using rawReq.body object`);
-        return rawReq.body;
-      }
+      console.warn(`[${requestId}] Body parse failed:`, e.message);
       return {};
     }
   }
@@ -185,61 +154,30 @@ const parseJsonBody = async (c: any, requestId: string): Promise<any> => {
 // Auth
 app.post('/api/auth/login', async (c) => {
   const requestId = Math.random().toString(36).substring(7);
-  console.log(`[${requestId}] LOGIN START - Headers:`, JSON.stringify(c.req.header()));
+  console.log(`[${requestId}] LOGIN START`);
   
   try {
-    // 1. Parse body with safety
-    console.log(`[${requestId}] Reading body...`);
-    const body = await parseJsonBody(c, requestId);
+    const body = await c.req.json().catch(() => ({}));
     const { email, password } = body;
-    console.log(`[${requestId}] Body parsed for ${email || 'unknown'}`);
+    console.log(`[${requestId}] Login attempt for: ${email || 'missing'}`);
 
-    if (!email || !password) {
-      return c.json({ error: "Email and password are required" }, 400);
-    }
+    if (!email || !password) return c.json({ error: "Email and password are required" }, 400);
 
-    // 2. Auth with Supabase
-    console.log(`[${requestId}] Supabase signIn...`);
     const supabase = getSupabase(c);
-    const { data, error } = await withTimeout(
-      supabase.auth.signInWithPassword({ email, password }),
-      60000,
-      'Supabase auth timeout'
-    );
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     
     if (error) {
       console.log(`[${requestId}] Auth error: ${error.message}`);
-      let msg = error.message;
-      if (msg.toLowerCase().includes('invalid login credentials')) msg = "Invalid email or password";
-      return c.json({ error: msg, code: error.name }, 401);
+      return c.json({ error: error.message }, 401);
     }
     
-    if (!data.user) {
-      console.log(`[${requestId}] Auth success but no user returned`);
-      return c.json({ error: 'Authentication succeeded but no user data was returned' }, 500);
-    }
+    if (!data.user || !data.session) return c.json({ error: 'Incomplete auth data returned from Supabase' }, 500);
 
-    console.log(`[${requestId}] Auth success for ${data.user.id}`);
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle();
 
-    // 3. Fetch Profile (Non-fatal)
-    console.log(`[${requestId}] Fetching profile...`);
-    let profile: any = null;
-    try {
-      const { data: profileData, error: profileError } = await withTimeout(
-        supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle(),
-        15000,
-        'Profile fetch timeout'
-      );
-      if (profileError) console.warn(`[${requestId}] Profile fetch error:`, profileError.message);
-      else profile = profileData;
-    } catch (profileTimeoutErr: any) {
-      console.warn(`[${requestId}] Profile fetch timed out or failed:`, profileTimeoutErr.message);
-    }
-
-    console.log(`[${requestId}] LOGIN COMPLETE`);
-    
+    console.log(`[${requestId}] LOGIN SUCCESS`);
     return c.json({
-      v: '2.0.1',
+      v: '2.0.2',
       session: data.session,
       user: {
         id: data.user.id, 
@@ -253,7 +191,7 @@ app.post('/api/auth/login', async (c) => {
     });
   } catch (e: any) {
     console.error(`[${requestId}] LOGIN FATAL ERROR:`, e.message);
-    return c.json({ error: e.message || 'Internal login error' }, e.message?.includes('timeout') ? 504 : 500);
+    return c.json({ error: e.message || 'Internal login error' }, 500);
   }
 });
 
@@ -285,7 +223,7 @@ app.post('/api/auth/register', async (c) => {
       console.log(`[${requestId}] Creating profile for ${data.user.id}`);
       const adminClient = getSupabase(c, true);
       await withTimeout(
-        adminClient.from('profiles').upsert({ id: data.user.id, email, name, phone, role: email === 'cbogineni@gmail.com' ? 'admin' : 'user', currency: '₹' }),
+        Promise.resolve(adminClient.from('profiles').upsert({ id: data.user.id, email, name, phone, role: email === 'cbogineni@gmail.com' ? 'admin' : 'user', currency: '₹' })),
         10000,
         'Profile creation timeout'
       ).catch(e => console.warn(`[${requestId}] Profile upsert error:`, e.message));
@@ -312,7 +250,7 @@ app.post('/api/auth/forgot-password', async (c) => {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
     
     await withTimeout(
-      supabase.from('otps').upsert({ email, otp, expires_at: expiresAt }, { onConflict: 'email' }),
+      Promise.resolve(supabase.from('otps').upsert({ email, otp, expires_at: expiresAt }, { onConflict: 'email' })),
       10000,
       'Database UPSERT timeout'
     );
@@ -345,7 +283,7 @@ app.post('/api/auth/reset-password', async (c) => {
     const supabase = getSupabase(c, true);
     
     const { data: otpData } = await withTimeout(
-      supabase.from('otps').select('*').eq('email', email).eq('otp', otp).gt('expires_at', new Date().toISOString()).maybeSingle(),
+      Promise.resolve(supabase.from('otps').select('*').eq('email', email).eq('otp', otp).gt('expires_at', new Date().toISOString()).maybeSingle()),
       10000,
       'OTP validation timeout'
     );
@@ -367,7 +305,7 @@ app.post('/api/auth/reset-password', async (c) => {
       'Password update timeout'
     );
     
-    await supabase.from('otps').delete().eq('email', email).catch(() => {});
+    await Promise.resolve(supabase.from('otps').delete().eq('email', email));
     
     console.log(`[${requestId}] RESET-PASSWORD COMPLETE`);
     return c.json({ message: "Password reset successful" });
@@ -390,7 +328,7 @@ app.post('/api/logs/create', async (c) => {
     if (authErr || !user) return c.json({ error: "Invalid session" }, 401);
     
     const { error: insertErr } = await withTimeout(
-      supabase.from('activity_logs').insert([{ user_id: user.id, user_name: user.user_metadata?.name || user.email, action, details }]),
+      Promise.resolve(supabase.from('activity_logs').insert([{ user_id: user.id, user_name: user.user_metadata?.name || user.email, action, details }])),
       10000,
       'Log insertion timeout'
     );
@@ -414,7 +352,7 @@ app.get('/api/admin/users', async (c) => {
     if (auth.error) return c.json({ error: auth.error }, auth.status as any);
     
     const { data, error } = await withTimeout(
-      getSupabase(c, true).from('profiles').select('*').order('created_at', { ascending: false }),
+      Promise.resolve(getSupabase(c, true).from('profiles').select('*').order('created_at', { ascending: false })),
       15000,
       'Users fetch timeout'
     );
@@ -437,7 +375,7 @@ app.get('/api/admin/transactions', async (c) => {
     if (auth.error) return c.json({ error: auth.error }, auth.status as any);
     
     const { data, error } = await withTimeout(
-      getSupabase(c, true).from('transactions').select('*, category:categories(*)').order('date', { ascending: false }),
+      Promise.resolve(getSupabase(c, true).from('transactions').select('*, category:categories(*)').order('date', { ascending: false })),
       20000,
       'Transactions fetch timeout'
     );
@@ -460,7 +398,7 @@ app.get('/api/admin/logs', async (c) => {
     if (auth.error) return c.json({ error: auth.error }, auth.status as any);
     
     const { data, error } = await withTimeout(
-      getSupabase(c, true).from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100),
+      Promise.resolve(getSupabase(c, true).from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100)),
       15000,
       'Logs fetch timeout'
     );
@@ -511,7 +449,7 @@ app.post('/api/admin/create-user', async (c) => {
     
     // 2. Create Profile
     const { error: profileErr } = await withTimeout(
-      supabase.from('profiles').upsert({ id: authUser.user.id, email, name, role: role || 'client' }),
+      Promise.resolve(supabase.from('profiles').upsert({ id: authUser.user.id, email, name, role: role || 'client' })),
       10000,
       'Profile upsert timeout'
     );
@@ -570,7 +508,7 @@ app.post('/api/admin/sync-profiles', async (c) => {
     }));
     
     const { error: upsertErr } = await withTimeout(
-      supabase.from('profiles').upsert(profiles, { onConflict: 'id', ignoreDuplicates: true }),
+      Promise.resolve(supabase.from('profiles').upsert(profiles, { onConflict: 'id', ignoreDuplicates: true })),
       20000,
       'Profiles batch upsert timeout'
     );
