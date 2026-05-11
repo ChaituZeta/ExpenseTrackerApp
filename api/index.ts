@@ -138,15 +138,24 @@ const withTimeout = (promise: Promise<any>, ms: number, message: string) => {
 // Robust body parser
 const parseJsonBody = async (c: any, requestId: string): Promise<any> => {
   try {
-    const text = await withTimeout(c.req.text(), 30000, 'Body parsing timeout');
-    console.log(`[${requestId}] Raw body length: ${text?.length || 0}`);
-    return text ? JSON.parse(text) : {};
+    // Try direct JSON parsing first - most reliable in Node.js runtime
+    console.log(`[${requestId}] Attempting c.req.json()...`);
+    return await c.req.json();
   } catch (err: any) {
-    console.warn(`[${requestId}] Body parse failed (text):`, err.message);
+    console.warn(`[${requestId}] c.req.json() failed:`, err.message);
     try {
-      return await c.req.json();
+      // Fallback to text parsing
+      console.log(`[${requestId}] Attempting c.req.text()...`);
+      const text = await c.req.text();
+      console.log(`[${requestId}] Raw body length: ${text?.length || 0}`);
+      return text ? JSON.parse(text) : {};
     } catch (e: any) {
-      console.warn(`[${requestId}] Body parse failed (json):`, e.message);
+      console.warn(`[${requestId}] All body parse attempts failed:`, e.message);
+      // Last resort: check if it's already parsed by a middleware (unlikely but possible)
+      const rawReq = c.req.raw || c.req;
+      if (rawReq.body && typeof rawReq.body === 'object' && !('getReader' in rawReq.body)) {
+        return rawReq.body;
+      }
       return {};
     }
   }
@@ -355,7 +364,7 @@ app.post('/api/logs/create', async (c) => {
     const body = await parseJsonBody(c, requestId);
     const { action, details } = body;
     const supabase = getSupabase(c);
-    const { data: { user }, error: authErr } = await withTimeout(supabase.auth.getUser(token), 10000, 'Auth verification timeout');
+    const { data: { user }, error: authErr } = await withTimeout(supabase.auth.getUser(token), 30000, 'Auth verification timeout');
     if (authErr || !user) return c.json({ error: "Invalid session" }, 401);
     
     const { error: insertErr } = await withTimeout(
