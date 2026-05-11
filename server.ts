@@ -77,8 +77,9 @@ async function startServer() {
     });
   }
 
-    expressApp.listen(PORT, "0.0.0.0", () => {
-      log(`SUCCESS: Server is listening on port ${PORT}`);
+    const portNum = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
+    expressApp.listen(portNum, "0.0.0.0", () => {
+      log(`SUCCESS: Server is listening on port ${portNum}`);
     });
   } catch (error: any) {
     log(`CRITICAL STARTUP ERROR: ${error.message}`);

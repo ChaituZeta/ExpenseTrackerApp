@@ -5,14 +5,30 @@ const getAuthSession = async () => {
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
   if (session) return session;
   
-  // Fallback to getUser which is more robust but slower
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (user) {
-    const { data: { session: retrySession } } = await supabase.auth.getSession();
-    if (retrySession) return retrySession;
+  // If getSession failed with a refresh token error, clear session and throw
+  if (sessionError?.message.includes('Refresh Token Not Found') || sessionError?.message.includes('refresh_token_not_found')) {
+    await supabase.auth.signOut();
+    throw new Error('Session expired. Please log in again.');
   }
   
-  console.warn('Auth session check failed:', sessionError || userError);
+  // Fallback to getUser which is more robust but slower
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (user) {
+      const { data: { session: retrySession } } = await supabase.auth.getSession();
+      if (retrySession) return retrySession;
+    }
+    
+    if (userError?.message.includes('Refresh Token Not Found') || userError?.message.includes('refresh_token_not_found')) {
+      await supabase.auth.signOut();
+      throw new Error('Session expired. Please log in again.');
+    }
+    
+    console.warn('Auth session check failed:', sessionError || userError);
+  } catch (e) {
+    console.error('Error during getAuthSession:', e);
+  }
+  
   throw new Error('Not authenticated');
 };
 
@@ -109,7 +125,16 @@ export const api = {
         if (error) {
           // If there's a refresh token error, clear the session
           if (error.message.includes('Refresh Token Not Found') || error.message.includes('refresh_token_not_found')) {
+            console.warn('api.auth.me: Stale refresh token. Signing out...');
             await supabase.auth.signOut();
+            // Clear storage as a precaution
+            if (typeof window !== 'undefined') {
+              Object.keys(window.localStorage).forEach(key => {
+                if (key.includes('-auth-token')) {
+                  window.localStorage.removeItem(key);
+                }
+              });
+            }
           }
           console.warn('api.auth.me: getUser error:', error.message);
           return { user: null };

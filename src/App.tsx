@@ -52,7 +52,15 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     });
 
     // Listen for changes on auth state (logged in, signed out, etc.)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', event, !!session);
+      
+      if (event === ('TOKEN_REFRESH_FAILED' as any)) {
+        console.error('Session refresh failed. Signing out...');
+        api.auth.logout();
+        return;
+      }
+
       if (session?.user) {
         setUser({
           id: session.user.id,

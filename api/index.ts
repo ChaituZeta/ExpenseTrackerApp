@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
-import { handle } from 'hono/vercel';
+import { handle } from '@hono/node-server/vercel';
 
 const app = new Hono();
 
@@ -28,7 +28,7 @@ app.use('*', async (c, next) => {
   c.header('Access-Control-Allow-Origin', '*');
   c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (c.req.method === 'OPTIONS') return c.text('', 204);
+  if (c.req.method === 'OPTIONS') return c.text('', 204 as any);
   await next();
 });
 
