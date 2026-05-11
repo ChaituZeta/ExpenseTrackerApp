@@ -37,8 +37,8 @@ let supabaseClient: any = null;
 let supabaseAdminClient: any = null;
 
 const getSupabase = (c: any, isAdminAction = false) => {
-  const envUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const envAnon = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  const envUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const envAnon = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
   const envService = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   const url = envUrl || 'https://poeyhgmbbpovbmonoeqi.supabase.co';
@@ -135,17 +135,38 @@ const withTimeout = (promise: Promise<any>, ms: number, message: string) => {
   ]);
 };
 
+// Robust body parser
+const parseJsonBody = async (c: any, requestId: string): Promise<any> => {
+  try {
+    const text = await withTimeout(c.req.text(), 30000, 'Body parsing timeout');
+    console.log(`[${requestId}] Raw body length: ${text?.length || 0}`);
+    return text ? JSON.parse(text) : {};
+  } catch (err: any) {
+    console.warn(`[${requestId}] Body parse failed (text):`, err.message);
+    try {
+      return await c.req.json();
+    } catch (e: any) {
+      console.warn(`[${requestId}] Body parse failed (json):`, e.message);
+      return {};
+    }
+  }
+};
+
 // Auth
 app.post('/api/auth/login', async (c) => {
   const requestId = Math.random().toString(36).substring(7);
-  console.log(`[${requestId}] LOGIN START`);
+  console.log(`[${requestId}] LOGIN START - Headers:`, JSON.stringify(c.req.header()));
   
   try {
     // 1. Parse body with safety
     console.log(`[${requestId}] Reading body...`);
-    const body = await withTimeout(c.req.json(), 30000, 'Body parsing timeout');
+    const body = await parseJsonBody(c, requestId);
     const { email, password } = body;
-    console.log(`[${requestId}] Body parsed for ${email}`);
+    console.log(`[${requestId}] Body parsed for ${email || 'unknown'}`);
+
+    if (!email || !password) {
+      return c.json({ error: "Email and password are required" }, 400);
+    }
 
     // 2. Auth with Supabase
     console.log(`[${requestId}] Supabase signIn...`);
@@ -210,7 +231,7 @@ app.post('/api/auth/register', async (c) => {
   console.log(`[${requestId}] REGISTER START`);
   
   try {
-    const body = await withTimeout(c.req.json(), 30000, 'Body parsing timeout');
+    const body = await parseJsonBody(c, requestId);
     const { email, password, name, phone } = body;
     console.log(`[${requestId}] Registering ${email}`);
 
@@ -251,7 +272,10 @@ app.post('/api/auth/forgot-password', async (c) => {
   const requestId = Math.random().toString(36).substring(7);
   console.log(`[${requestId}] FORGOT-PASSWORD START`);
   try {
-    const { email } = await withTimeout(c.req.json(), 30000, 'Body parsing timeout');
+    const body = await parseJsonBody(c, requestId);
+    const email = body.email || body.identifier;
+    if (!email) return c.json({ error: "Email is required" }, 400);
+
     const supabase = getSupabase(c, true);
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
@@ -285,7 +309,8 @@ app.post('/api/auth/reset-password', async (c) => {
   const requestId = Math.random().toString(36).substring(7);
   console.log(`[${requestId}] RESET-PASSWORD START`);
   try {
-    const { email, otp, newPassword } = await withTimeout(c.req.json(), 30000, 'Body parsing timeout');
+    const body = await parseJsonBody(c, requestId);
+    const { email, otp, newPassword } = body;
     const supabase = getSupabase(c, true);
     
     const { data: otpData } = await withTimeout(
@@ -327,7 +352,8 @@ app.post('/api/logs/create', async (c) => {
     const authHeader = getHeader(c, 'Authorization');
     if (!authHeader) return c.json({ error: "Unauthorized" }, 401);
     const token = authHeader.split(' ')[1];
-    const { action, details } = await withTimeout(c.req.json(), 30000, 'Body parsing timeout');
+    const body = await parseJsonBody(c, requestId);
+    const { action, details } = body;
     const supabase = getSupabase(c);
     const { data: { user }, error: authErr } = await withTimeout(supabase.auth.getUser(token), 10000, 'Auth verification timeout');
     if (authErr || !user) return c.json({ error: "Invalid session" }, 401);
@@ -426,7 +452,7 @@ app.post('/api/admin/create-user', async (c) => {
     const auth = await isAdmin(c);
     if (auth.error) return c.json({ error: auth.error }, auth.status as any);
     
-    const body = await withTimeout(c.req.json(), 30000, 'Body parsing timeout');
+    const body = await parseJsonBody(c, requestId);
     const { email, password, name, role } = body;
     console.log(`[${requestId}] Creating user ${email} with role ${role}`);
     

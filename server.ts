@@ -37,10 +37,26 @@ async function startServer() {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
       
+      // Construct clean headers for Hono
+      const headers = new Headers();
+      Object.entries(req.headers).forEach(([key, value]) => {
+        if (value) {
+          if (Array.isArray(value)) {
+            value.forEach(v => headers.append(key, v));
+          } else {
+            headers.set(key, value);
+          }
+        }
+      });
+
+      // Remove headers that should be recalculated for the new Request body
+      headers.delete('content-length');
+      headers.delete('transfer-encoding');
+      
       // Construct the request for Hono
       const honoRequest = new Request(url.toString(), {
         method: req.method,
-        headers: req.headers as any,
+        headers: headers,
         body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? JSON.stringify(req.body) : undefined,
       });
 
