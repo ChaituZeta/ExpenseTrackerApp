@@ -10,7 +10,7 @@ async function build() {
   
   try {
     await esbuild.build({
-      entryPoints: ['server.ts'],
+      entryPoints: ['backend/src/server.ts'],
       bundle: true,
       platform: 'node',
       target: 'node20',

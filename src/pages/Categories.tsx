@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Category } from '../types';
 import { 
-  Plus, Trash2, Tag, Palette, Type, Edit2, X, AlertCircle, CheckCircle2
+  Plus, Trash2, Tag, Palette, Type, Edit2, X, AlertCircle, CheckCircle2, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -20,6 +20,7 @@ export default function Categories() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [iconSearch, setIconSearch] = useState('');
 
   useEffect(() => {
     loadCategories();
@@ -64,6 +65,7 @@ export default function Categories() {
     setColor('#3b82f6');
     setIcon('Tag');
     setEditingId(null);
+    setIconSearch('');
   };
 
   const handleEdit = (category: Category) => {
@@ -140,6 +142,10 @@ export default function Categories() {
     '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#6366f1', 
     '#8b5cf6', '#ec4899', '#f43f5e', '#14b8a6', '#06b6d4'
   ];
+
+  const filteredIcons = ICON_OPTIONS.filter(opt =>
+    opt.name.toLowerCase().includes(iconSearch.toLowerCase())
+  );
 
   return (
     <div className="space-y-8">
@@ -248,11 +254,32 @@ export default function Categories() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-bold text-zinc-700 flex items-center gap-2">
-                <Tag className="w-4 h-4" /> Icon
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-bold text-zinc-700 flex items-center gap-2">
+                  <Tag className="w-4 h-4" /> Icon
+                </label>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={iconSearch}
+                    onChange={(e) => setIconSearch(e.target.value)}
+                    placeholder="Search icons..."
+                    className="pl-7 pr-6 py-1 text-xs rounded-lg border border-zinc-200 focus:border-black focus:ring-1 focus:ring-black outline-none w-32 transition-all bg-white"
+                  />
+                  {iconSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setIconSearch('')}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-650"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
               <div className="grid grid-cols-6 gap-2 max-h-48 overflow-y-auto p-2 border border-zinc-100 rounded-xl bg-zinc-50">
-                {ICON_OPTIONS.map(opt => (
+                {filteredIcons.map(opt => (
                   <button
                     key={opt.name}
                     type="button"
@@ -263,6 +290,11 @@ export default function Categories() {
                     <opt.icon className="w-5 h-5" />
                   </button>
                 ))}
+                {filteredIcons.length === 0 && (
+                  <div className="col-span-full py-4 text-center text-xs text-zinc-400">
+                    No icons match "{iconSearch}"
+                  </div>
+                )}
               </div>
             </div>
 

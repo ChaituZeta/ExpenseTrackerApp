@@ -32,10 +32,21 @@ const getAuthSession = async () => {
   throw new Error('Not authenticated');
 };
 
+const getApiUrl = (path: string) => {
+  // Check if we are running in a native Capacitor mobile app
+  const isNative = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNative;
+  if (isNative) {
+    const customBase = import.meta.env.VITE_MOBILE_API_URL;
+    const base = customBase || 'https://ais-pre-7jtw64vzz42aknybbz4z46-457205007868.asia-east1.run.app';
+    return `${base}${path}`;
+  }
+  return path;
+};
+
 export const api = {
   auth: {
     register: async (data: any) => {
-      const response = await fetch('/api/auth/register', {
+      const response = await fetch(getApiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
@@ -70,7 +81,7 @@ export const api = {
 
       try {
         console.log('Attempting login via server API...');
-        const response = await fetch('/api/auth/login', {
+        const response = await fetch(getApiUrl('/api/auth/login'), {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
@@ -103,8 +114,13 @@ export const api = {
         
         // CRITICAL: Set the session in the client-side Supabase instance
         if (res.session) {
+          console.log('Setting client-side Supabase session...');
           const { error } = await supabase.auth.setSession(res.session);
-          if (error) console.error('Failed to set session after server-side login:', error);
+          if (error) {
+            console.error('Failed to set session after server-side login:', error);
+          } else {
+            console.log('Client-side Supabase session set successfully.');
+          }
         }
         
         // Log activity (now via API) - don't await this to speed up login
@@ -197,7 +213,7 @@ export const api = {
 
     forgotPassword: async (identifier: string) => {
       // identifier can be email or phone
-      const response = await fetch('/api/auth/forgot-password', {
+      const response = await fetch(getApiUrl('/api/auth/forgot-password'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier })
@@ -224,7 +240,7 @@ export const api = {
     },
 
     resetPassword: async (data: any) => {
-      const response = await fetch('/api/auth/reset-password', {
+      const response = await fetch(getApiUrl('/api/auth/reset-password'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
@@ -267,7 +283,7 @@ export const api = {
       const session = await getAuthSession();
 
       try {
-        const response = await fetch('/api/admin/users', {
+        const response = await fetch(getApiUrl('/api/admin/users'), {
           headers: {
             'Authorization': `Bearer ${session.access_token}`
           }
@@ -332,7 +348,7 @@ export const api = {
       const session = await getAuthSession();
 
       try {
-        const response = await fetch('/api/admin/transactions', {
+        const response = await fetch(getApiUrl('/api/admin/transactions'), {
           headers: {
             'Authorization': `Bearer ${session.access_token}`
           }
@@ -385,7 +401,7 @@ export const api = {
       const session = await getAuthSession();
 
       try {
-        const response = await fetch('/api/admin/logs', {
+        const response = await fetch(getApiUrl('/api/admin/logs'), {
           headers: {
             'Authorization': `Bearer ${session.access_token}`
           }
@@ -440,7 +456,7 @@ export const api = {
     },
     createUser: async (userData: any) => {
       const session = await getAuthSession();
-      const response = await fetch('/api/admin/create-user', {
+      const response = await fetch(getApiUrl('/api/admin/create-user'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -471,7 +487,7 @@ export const api = {
     syncProfiles: async () => {
       const session = await getAuthSession();
       console.log('Syncing profiles, session exists:', !!session);
-      const response = await fetch('/api/admin/sync-profiles', {
+      const response = await fetch(getApiUrl('/api/admin/sync-profiles'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`
@@ -508,7 +524,7 @@ export const api = {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
 
-        await fetch('/api/logs/create', {
+        await fetch(getApiUrl('/api/logs/create'), {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',

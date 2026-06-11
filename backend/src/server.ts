@@ -20,6 +20,9 @@ log('--- SERVER.TS STARTING ---');
 log(`Node Version: ${process.version}`);
 log(`Port: ${process.env.PORT || 3000}`);
 log(`Directory: ${process.cwd()}`);
+log(`Environment Mode: ${process.env.NODE_ENV || 'development'}`);
+log(`Supabase Setup Status: URL exists: ${!!process.env.SUPABASE_URL}, ServiceRole exists: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`);
+log(`SMTP Setup Status: Server defined: ${!!process.env.SMTP_HOST}`);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

@@ -4,15 +4,22 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=development tsx server.ts",
+    "dev": "NODE_ENV=development tsx backend/src/server.ts",
     "build": "vite build && node scripts/build-server.js",
     "build:server": "node scripts/build-server.js",
     "start": "NODE_ENV=production node server.dist.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "mobile:sync": "vite build && npx cap sync",
+    "mobile:open": "npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
     "@google/genai": "^1.29.0",
     "@hono/node-server": "^1.19.12",
     "@supabase/supabase-js": "^2.99.1",
@@ -40,7 +47,8 @@
     "tailwind-merge": "^3.5.0",
     "tsx": "^4.21.0",
     "vite": "^6.2.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -52,9 +60,11 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vercel/node": "^5.7.0",
+    "@vitest/coverage-v8": "^4.1.8",
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "vitest": "^4.1.8"
   }
 }

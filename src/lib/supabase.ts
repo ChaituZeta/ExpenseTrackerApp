@@ -19,18 +19,46 @@ const getEnv = (key: string): string => {
 };
 
 // Prioritize platform environment variables over hardcoded fallbacks
-const supabaseUrl = getEnv('VITE_SUPABASE_URL') || getEnv('NEXT_PUBLIC_SUPABASE_URL') || getEnv('SUPABASE_URL') || DEFAULT_SUPABASE_URL;
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY') || DEFAULT_SUPABASE_ANON_KEY;
+// Direct access ensures Vite's 'define' replacement works correctly
+const supabaseUrl = 
+  import.meta.env.NEXT_PUBLIC_SUPABASE_URL ||
+  // @ts-ignore
+  (typeof process !== 'undefined' && process.env.VITE_SUPABASE_URL) || 
+  import.meta.env.VITE_SUPABASE_URL || 
+  import.meta.env.SUPABASE_URL ||
+  DEFAULT_SUPABASE_URL;
+
+const supabaseAnonKey = 
+  import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  // @ts-ignore
+  (typeof process !== 'undefined' && process.env.VITE_SUPABASE_ANON_KEY) || 
+  import.meta.env.VITE_SUPABASE_ANON_KEY || 
+  import.meta.env.SUPABASE_ANON_KEY ||
+  DEFAULT_SUPABASE_ANON_KEY;
 
 // Logging & Verification
-const isUsingFallback = (supabaseUrl === DEFAULT_SUPABASE_URL && !getEnv('VITE_SUPABASE_URL') && !getEnv('SUPABASE_URL'));
+const isUsingFallback = (supabaseUrl === DEFAULT_SUPABASE_URL);
+const isProd = import.meta.env.PROD;
 
 if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
   console.error('❌ Supabase Initialization Failed: Missing URL or API Key.');
 } else {
-  console.log(`✅ Supabase client initialized. Mode: ${isUsingFallback ? 'FALLBACK' : 'PRODUCTION'}`);
-  if (isUsingFallback) {
-    console.warn('⚠️  Warning: Using hardcoded fallback credentials. Ensure Vercel environment variables are configured for better security.');
+  const getSource = (val: string, viteEnv: any, nextEnv: any, suEnv: any, fallback: string) => {
+    if (val === nextEnv) return 'NEXT_PUBLIC_ENV';
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env.VITE_SUPABASE_URL === val) return 'VITE_DEFINE';
+    if (val === viteEnv) return 'VITE_ENV';
+    if (val === suEnv) return 'SUPABASE_ENV';
+    if (val === fallback) return 'FALLBACK';
+    return 'UNKNOWN';
+  };
+
+  const urlSource = getSource(supabaseUrl, import.meta.env.VITE_SUPABASE_URL, import.meta.env.NEXT_PUBLIC_SUPABASE_URL, import.meta.env.SUPABASE_URL, DEFAULT_SUPABASE_URL);
+  const keySource = getSource(supabaseAnonKey, import.meta.env.VITE_SUPABASE_ANON_KEY, import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, import.meta.env.SUPABASE_ANON_KEY, DEFAULT_SUPABASE_ANON_KEY);
+                    
+  console.log(`✅ Supabase initialized. Source: [URL: ${urlSource}, KEY: ${keySource}] (${isUsingFallback ? 'FALLBACK' : 'PRODUCTION'})`);
+  if (isUsingFallback && isProd) {
+    console.warn('⚠️ Warning: Using hardcoded fallback credentials in production. Ensure Vercel environment variables (NEXT_PUBLIC_SUPABASE_URL, etc.) are configured.');
   }
 }
 
