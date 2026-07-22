@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../App';
 import { useNavigate } from 'react-router-dom';
-import { Summary, Transaction } from '../types';
-import { TrendingUp, TrendingDown, Wallet, Plus, ShieldCheck, CheckCircle2, Calendar, ChevronDown } from 'lucide-react';
+import { Summary, Transaction, Budget } from '../types';
+import { TrendingUp, TrendingDown, Wallet, Plus, ShieldCheck, CheckCircle2, Calendar, ChevronDown, AlertTriangle } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 import { motion } from 'motion/react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
@@ -16,6 +16,7 @@ import { IconRenderer } from '../components/IconRenderer';
 export default function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
+  const [budgetWarnings, setBudgetWarnings] = useState<{name: string, spent: number, budget: number, percentage: number}[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'yyyy-MM'));
   const [loading, setLoading] = useState(true);
 
@@ -33,12 +34,33 @@ export default function Dashboard() {
     setLoading(true);
     Promise.all([
       api.summary.get(undefined, startIso, endIso),
-      api.transactions.getAll()
-    ]).then(([s, t]) => {
+      api.transactions.getAll(),
+      api.budgets.getAll()
+    ]).then(([s, t, b]) => {
       setSummary(s);
       // Filter transactions for selected month for the recent list
       const filteredTransactions = t.filter(trans => trans.date >= startIso && trans.date <= endIso);
       setRecentTransactions(filteredTransactions.slice(0, 5));
+
+      const monthBudgets = b.filter(budget => budget.month === selectedMonth);
+      const warnings: {name: string, spent: number, budget: number, percentage: number}[] = [];
+      
+      for (const budget of monthBudgets) {
+        if (!budget.category_name) continue;
+        
+        const spentObj = s.categorySpending.find(cat => cat.name === budget.category_name);
+        const spent = spentObj ? spentObj.total : 0;
+        
+        if (budget.amount > 0 && (spent / budget.amount) >= 0.8) {
+          warnings.push({
+            name: budget.category_name,
+            spent,
+            budget: budget.amount,
+            percentage: Math.round((spent / budget.amount) * 100)
+          });
+        }
+      }
+      setBudgetWarnings(warnings);
     }).finally(() => setLoading(false));
   }, [selectedMonth]);
 
@@ -107,6 +129,39 @@ export default function Dashboard() {
           </button>
         </div>
       </header>
+
+      {budgetWarnings.length > 0 && (
+        <div className="space-y-4">
+          {budgetWarnings.map((warning, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`border p-4 rounded-3xl flex items-center gap-4 ${
+                warning.percentage >= 100 
+                  ? 'bg-red-50 border-red-200 text-red-900' 
+                  : 'bg-amber-50 border-amber-200 text-amber-900'
+              }`}
+            >
+              <div className={`p-3 rounded-2xl ${
+                warning.percentage >= 100 ? 'bg-red-100' : 'bg-amber-100'
+              }`}>
+                <AlertTriangle className={`w-6 h-6 ${
+                  warning.percentage >= 100 ? 'text-red-600' : 'text-amber-600'
+                }`} />
+              </div>
+              <div>
+                <p className="font-bold text-lg">
+                  {warning.percentage >= 100 ? 'Budget Exceeded:' : 'Budget Warning:'} {warning.name}
+                </p>
+                <p className={`text-sm ${warning.percentage >= 100 ? 'text-red-700' : 'text-amber-700'}`}>
+                  You have spent {warning.percentage}% (₹{warning.spent.toLocaleString('en-IN', { maximumFractionDigits: 0 })}) of your ₹{warning.budget.toLocaleString('en-IN', { maximumFractionDigits: 0 })} budget for this month.
+                </p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, i) => (
